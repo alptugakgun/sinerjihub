@@ -37,21 +37,32 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// --- YENİ: PROFİL GÜNCELLE (ONBOARDING VERİLERİ) ---
+// --- PROFİL GÜNCELLE (ONBOARDING VERİLERİ) ---
 router.put('/update-profile', async (req, res) => {
   try {
     const { userId, roles, interests } = req.body;
-    
-    // Kullanıcıyı ID'sinden bul ve rollerini/ilgi alanlarını güncelle
     const updatedUser = await User.findByIdAndUpdate(
       userId, 
       { roles, interests }, 
       { new: true }
     );
-    
     res.status(200).json({ message: "Profil başarıyla güncellendi!", user: updatedUser });
   } catch (err) {
     res.status(500).json({ message: "Profil güncellenirken hata oluştu.", error: err.message });
+  }
+});
+
+// --- YENİ: KULLANICI BİLGİLERİNİ GETİR (DASHBOARD İÇİN) ---
+router.get('/user/:id', async (req, res) => {
+  try {
+    // Güvenlik: .select('-password') diyerek şifreyi frontend'e asla göndermiyoruz
+    const user = await User.findById(req.params.id).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+    }
+    res.status(200).json(user);
+  } catch (err) {
+    res.status(500).json({ message: "Kullanıcı bilgileri alınırken hata.", error: err.message });
   }
 });
 
