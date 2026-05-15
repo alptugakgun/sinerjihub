@@ -1,8 +1,49 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 export default function DashboardPage() {
-  // Arayüzü canlandırmak için örnek kabile (Hub) verileri
+  const router = useRouter();
+  
+  // Kullanıcı verisini ve yüklenme durumunu tutacağımız hafızalar
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Sayfa açıldığı an çalışacak motor (Gerçek veriyi çeker)
+  useEffect(() => {
+    const fetchUserData = async () => {
+      const userId = localStorage.getItem("userId");
+      
+      // Kimlik yoksa kapı dışarı (Login'e)
+      if (!userId) {
+        router.push("/login");
+        return;
+      }
+
+      try {
+        // Canlı Render beynimizden kullanıcının verilerini istiyoruz
+        const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        
+        if (res.ok) {
+          const data = await res.json();
+          setUser(data); // Gelen gerçek veriyi hafızaya al
+        } else {
+          // Bir hata varsa (kullanıcı silinmişse vs.) hafızayı temizle ve Login'e at
+          localStorage.removeItem("userId");
+          router.push("/login");
+        }
+      } catch (error) {
+        console.error("Kullanıcı verisi çekilemedi:", error);
+      } finally {
+        setIsLoading(false); // Yüklenme ekranını kapat
+      }
+    };
+
+    fetchUserData();
+  }, [router]);
+
+  // Şimdilik sahte olan ama ileride dinamikleşecek ilan/kabile verileri
   const recommendedHubs = [
     { id: 1, name: "YBS Geliştiricileri", members: 342, category: "Yazılım & Yönetim", icon: "💻" },
     { id: 2, name: "Organik Kimya Lab", members: 128, category: "Eğitim", icon: "🧪" },
@@ -10,12 +51,21 @@ export default function DashboardPage() {
     { id: 4, name: "Next.js & React", members: 512, category: "Yazılım", icon: "⚛️" }
   ];
 
-  // Örnek İlanlar / Çalışma Odaları
   const activeRequests = [
     { id: 1, user: "Ahmet Y.", request: "LGS Fen Bilimleri deneme çözümü için çalışma arkadaşı arıyorum.", time: "10 dk önce", tags: ["Öğrenci", "Eğitim"] },
     { id: 2, user: "Zeynep T.", request: "Yeni startup projemiz için UI/UX tasarımlarını Canva'da toparlayacak biri lazım.", time: "45 dk önce", tags: ["Tasarım", "Proje"] },
     { id: 3, user: "Can K.", request: "Analitik Kimya vize öncesi soru çözüm kampı (Discord'da toplanıyoruz).", time: "2 saat önce", tags: ["Kimya", "Üniversite"] }
   ];
+
+  // Veri gelene kadar gösterilecek havalı bekleme ekranı
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-xl font-medium text-gray-400">Ana Üs Yükleniyor...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-900 text-white flex">
@@ -43,15 +93,15 @@ export default function DashboardPage() {
           </Link>
         </nav>
 
-        {/* Kullanıcı Profili Özeti */}
+        {/* DİNAMİK KULLANICI PROFİLİ ÖZETİ */}
         <div className="mt-auto border-t border-gray-700 pt-6">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-full flex items-center justify-center font-bold">
-              K
+            <div className="w-10 h-10 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-full flex items-center justify-center font-bold text-lg uppercase shadow-[0_0_10px_rgba(168,85,247,0.4)]">
+              {user?.username ? user.username.charAt(0) : "U"}
             </div>
-            <div>
-              <p className="text-sm font-medium">Kullanıcı</p>
-              <p className="text-xs text-gray-400">120 Karma Puanı 🌟</p>
+            <div className="overflow-hidden">
+              <p className="text-sm font-medium truncate">{user?.username || "Kullanıcı"}</p>
+              <p className="text-xs text-blue-400">{user?.karmaPoints || 10} Karma Puanı 🌟</p>
             </div>
           </div>
         </div>
@@ -60,20 +110,20 @@ export default function DashboardPage() {
       {/* Ana İçerik Alanı */}
       <main className="flex-1 p-6 md:p-10 overflow-y-auto">
         
-        {/* Üst Karşılama Barı */}
-        <header className="flex justify-between items-center mb-12">
+        {/* Üst Karşılama Barı (DİNAMİK İSİM) */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-4">
           <div>
-            <h2 className="text-3xl font-bold">Tekrar Hoş Geldin! 🚀</h2>
+            <h2 className="text-3xl font-bold">Tekrar Hoş Geldin, {user?.username || "Gezgin"}! 🚀</h2>
             <p className="text-gray-400 mt-1">İşte bugün ekosistemde olup bitenler.</p>
           </div>
-          <button className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-full font-medium transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)]">
+          <button className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2.5 rounded-full font-medium transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] whitespace-nowrap">
             + Yeni İlan Aç
           </button>
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Sol Kolon (Kabileler - 2 birim genişlik) */}
+          {/* Sol Kolon (Kabileler) */}
           <div className="lg:col-span-2 space-y-8">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-semibold">Senin İçin Önerilen Kabileler</h3>
@@ -99,7 +149,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Sağ Kolon (İlanlar / Yardımlaşma - 1 birim genişlik) */}
+          {/* Sağ Kolon (İlanlar / Yardımlaşma) */}
           <div className="space-y-6">
             <h3 className="text-xl font-semibold">İlanlar & Çalışma Odaları</h3>
             <div className="space-y-4">
