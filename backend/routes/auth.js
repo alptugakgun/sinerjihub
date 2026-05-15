@@ -1,36 +1,57 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const User = require('../models/User'); // Az önce yaptığımız şablonu çağırıyoruz
+const User = require('../models/User');
 
-// KAYIT OL (REGISTER) ROTASI
+// --- KAYIT OL (REGISTER) ---
 router.post('/register', async (req, res) => {
   try {
     const { username, email, password } = req.body;
-
-    // 1. E-posta sistemde zaten var mı diye kontrol et
     const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: "Bu e-posta kabilede zaten kullanımda dostum!" });
-    }
+    if (existingUser) return res.status(400).json({ message: "Bu e-posta kabilede zaten kullanımda!" });
 
-    // 2. Şifreyi şifrele (Hash işlemi)
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // 3. Yeni kullanıcıyı şablona göre oluştur
-    const newUser = new User({
-      username,
-      email,
-      password: hashedPassword
-    });
-
-    // 4. Veritabanına (MongoDB) kaydet
+    const newUser = new User({ username, email, password: hashedPassword });
     const savedUser = await newUser.save();
-    res.status(201).json({ message: "SinerjiHub'a hoş geldin!", userId: savedUser._id });
-
+    res.status(201).json({ message: "Hoş geldin!", userId: savedUser._id });
   } catch (err) {
-    res.status(500).json({ message: "Sunucuda bir arıza çıktı.", error: err.message });
+    res.status(500).json({ message: "Sunucu hatası.", error: err.message });
+  }
+});
+
+// --- GİRİŞ YAP (LOGIN) ---
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ message: "Kullanıcı bulunamadı." });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Şifre yanlış." });
+
+    res.status(200).json({ message: "Giriş başarılı", userId: user._id });
+  } catch (err) {
+    res.status(500).json({ message: "Sunucu hatası.", error: err.message });
+  }
+});
+
+// --- YENİ: PROFİL GÜNCELLE (ONBOARDING VERİLERİ) ---
+router.put('/update-profile', async (req, res) => {
+  try {
+    const { userId, roles, interests } = req.body;
+    
+    // Kullanıcıyı ID'sinden bul ve rollerini/ilgi alanlarını güncelle
+    const updatedUser = await User.findByIdAndUpdate(
+      userId, 
+      { roles, interests }, 
+      { new: true }
+    );
+    
+    res.status(200).json({ message: "Profil başarıyla güncellendi!", user: updatedUser });
+  } catch (err) {
+    res.status(500).json({ message: "Profil güncellenirken hata oluştu.", error: err.message });
   }
 });
 
