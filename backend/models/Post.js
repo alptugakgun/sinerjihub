@@ -1,6 +1,5 @@
 const mongoose = require('mongoose');
 
-// SinerjiHub İlan/Çalışma Odası Şablonu
 const postSchema = new mongoose.Schema({
   user: {
     type: mongoose.Schema.Types.ObjectId,
@@ -19,6 +18,13 @@ const postSchema = new mongoose.Schema({
     type: [String],
     default: []
   },
+  // YENİ: Destekleyen kullanıcıların ID'lerini burada tutuyoruz
+  upvotes: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ],
   createdAt: {
     type: Date,
     default: Date.now

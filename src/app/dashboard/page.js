@@ -83,12 +83,35 @@ export default function DashboardPage() {
     setIsPosting(false);
   };
 
+  // YENİ: Destekleme (Upvote) Fonksiyonu
+  const handleUpvote = async (postId) => {
+    const userId = localStorage.getItem("userId");
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/upvote/${postId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        // İlan listesini güncelle (Destek sayısını anlık artır)
+        setPosts(posts.map(p => p._id === postId ? { ...p, upvotes: [...(p.upvotes || []), userId] } : p));
+      } else {
+        alert(data.message);
+      }
+    } catch (err) {
+      console.error("Upvote hatası:", err);
+    }
+  };
+
   // Çıkış Yapma Motoru
   const handleLogout = () => {
     localStorage.removeItem("userId");
     router.push("/login");
   };
 
+  // ESKİ VİTRİN: Silinmedi, korundu
   const recommendedHubs = [
     { id: 1, name: "YBS Geliştiricileri", members: 342, category: "Yazılım & Yönetim", icon: "💻" },
     { id: 2, name: "Organik Kimya Lab", members: 128, category: "Eğitim", icon: "🧪" },
@@ -222,7 +245,7 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           
-          {/* Önerilen Kabileler */}
+          {/* Sol Kolon: Önerilen Kabileler */}
           <div className="lg:col-span-2 space-y-8">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-semibold">Senin İçin Önerilen Kabileler</h3>
@@ -248,7 +271,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* GERÇEK İLANLAR AKIŞI */}
+          {/* Sağ Kolon: GERÇEK İLANLAR AKIŞI VE UPVOTE BUTONU */}
           <div className="space-y-6">
             <h3 className="text-xl font-semibold">İlanlar & Çalışma Odaları</h3>
             <div className="space-y-4">
@@ -258,7 +281,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 posts.map((post) => (
-                  <div key={post._id} className="bg-gray-800/40 border border-gray-700 p-5 rounded-2xl transition-all hover:border-gray-600">
+                  <div key={post._id} className="bg-gray-800/40 border border-gray-700 p-5 rounded-2xl transition-all hover:border-gray-600 flex flex-col">
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-semibold text-blue-400 text-sm">{post.username}</span>
                       <span className="text-xs text-gray-500">{formatDate(post.createdAt)}</span>
@@ -277,9 +300,21 @@ export default function DashboardPage() {
                       </div>
                     )}
                     
-                    <button className="w-full py-2 rounded-xl border border-gray-600 hover:bg-gray-700 transition-colors text-sm font-medium">
-                      Mesaj At
-                    </button>
+                    {/* YENİ: ETKİLEŞİM BUTONLARI */}
+                    <div className="mt-auto pt-4 border-t border-gray-700/50 flex items-center gap-3">
+                      <button 
+                        onClick={() => handleUpvote(post._id)}
+                        disabled={post.upvotes?.includes(user?._id)}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${post.upvotes?.includes(user?._id) ? "bg-blue-500/20 text-blue-400 border-blue-500/30 cursor-not-allowed" : "bg-gray-700/50 text-gray-300 border-gray-600 hover:bg-blue-600 hover:text-white hover:border-blue-500"}`}
+                      >
+                        <span>{post.upvotes?.includes(user?._id) ? "✅ Desteklendi" : "🙌 Destekle"}</span>
+                        <span className="bg-black/30 px-2 py-0.5 rounded-md">{post.upvotes?.length || 0}</span>
+                      </button>
+                      <button className="flex-1 py-2 rounded-xl border border-gray-600 bg-gray-700/50 text-gray-300 hover:bg-gray-600 hover:text-white transition-colors text-xs font-bold">
+                        💬 Mesaj At
+                      </button>
+                    </div>
+
                   </div>
                 ))
               )}
