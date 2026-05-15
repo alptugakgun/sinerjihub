@@ -83,10 +83,10 @@ export default function DashboardPage() {
     setIsPosting(false);
   };
 
-  // YENİ: Çıkış Yapma Motoru
+  // Çıkış Yapma Motoru
   const handleLogout = () => {
-    localStorage.removeItem("userId"); // Kimliği hafızadan sil
-    router.push("/login"); // Giriş sayfasına fırlat
+    localStorage.removeItem("userId");
+    router.push("/login");
   };
 
   const recommendedHubs = [
@@ -181,7 +181,7 @@ export default function DashboardPage() {
           </Link>
         </nav>
 
-        {/* ALT KISIM: ÇIKIŞ VE PROFİL */}
+        {/* ALT KISIM: ÇIKIŞ VE PROFİL LİNKİ */}
         <div className="mt-auto space-y-4 border-t border-gray-700 pt-6">
           <button 
             onClick={handleLogout}
@@ -190,15 +190,17 @@ export default function DashboardPage() {
             <span>🚪</span> Çıkış Yap
           </button>
           
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-full flex items-center justify-center font-bold text-lg uppercase shadow-[0_0_10px_rgba(168,85,247,0.4)] flex-shrink-0">
-              {user?.username ? user.username.charAt(0) : "U"}
+          <Link href="/profile" className="block group">
+            <div className="flex items-center gap-3 p-2 rounded-xl group-hover:bg-gray-700/30 transition-all">
+              <div className="w-10 h-10 bg-gradient-to-tr from-purple-500 to-pink-500 rounded-full flex items-center justify-center font-bold text-lg uppercase shadow-[0_0_10px_rgba(168,85,247,0.4)] flex-shrink-0">
+                {user?.username ? user.username.charAt(0) : "U"}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-sm font-medium truncate group-hover:text-blue-400 transition-colors">{user?.username || "Profilim"}</p>
+                <p className="text-xs text-blue-400">{user?.karmaPoints || 10} Karma Puanı 🌟</p>
+              </div>
             </div>
-            <div className="overflow-hidden">
-              <p className="text-sm font-medium truncate">{user?.username || "Kullanıcı"}</p>
-              <p className="text-xs text-blue-400">{user?.karmaPoints || 10} Karma Puanı 🌟</p>
-            </div>
-          </div>
+          </Link>
         </div>
       </aside>
 
