@@ -11,6 +11,10 @@ export default function DashboardPage() {
   const [posts, setPosts] = useState([]);
   const [hubs, setHubs] = useState([]);
   
+  // YENİ: Bildirim Hafızaları
+  const [notifications, setNotifications] = useState([]);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [postContent, setPostContent] = useState("");
   const [postTags, setPostTags] = useState("");
@@ -51,6 +55,13 @@ export default function DashboardPage() {
           setHubs(hubsData);
         }
 
+        // 4. YENİ: Bildirimleri Çek
+        const notifRes = await fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`);
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setNotifications(notifData);
+        }
+
       } catch (error) {
         console.error("Veri çekme hatası:", error);
       } finally {
@@ -60,6 +71,20 @@ export default function DashboardPage() {
 
     fetchData();
   }, [router]);
+
+  // Bildirimleri "Okundu" İşaretleme Motoru
+  const handleMarkAsRead = async () => {
+    const userId = localStorage.getItem("userId");
+    try {
+      await fetch(`https://sinerjihub-1.onrender.com/api/notifications/mark-read/${userId}`, {
+        method: "PUT"
+      });
+      // Arayüzdeki bildirimleri de okundu olarak güncelle
+      setNotifications(notifications.map(n => ({ ...n, isRead: true })));
+    } catch (err) {
+      console.error("Bildirimler güncellenemedi", err);
+    }
+  };
 
   const handleCreatePost = async (e) => {
     e.preventDefault();
@@ -134,9 +159,36 @@ export default function DashboardPage() {
     return new Date(dateString).toLocaleDateString('tr-TR', options);
   };
 
+  // Okunmamış bildirim sayısını hesapla
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex relative font-sans selection:bg-blue-500/30">
+    <div className="min-h-screen bg-gray-900 text-white flex relative font-sans selection:bg-blue-500/30 overflow-hidden">
       
+      {/* BİLDİRİM PANELİ (Sağdan kayarak açılır) */}
+      {isNotifOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex justify-end">
+          <div className="w-full max-w-sm bg-gray-800 border-l border-gray-700 h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <div className="p-6 border-b border-gray-700 flex justify-between items-center bg-gray-800/90 sticky top-0">
+              <h3 className="text-xl font-bold flex items-center gap-2">Bildirimler 🔔</h3>
+              <button onClick={() => setIsNotifOpen(false)} className="text-gray-400 hover:text-white text-3xl">&times;</button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900/50">
+              {notifications.length === 0 ? (
+                <p className="text-gray-500 text-center mt-10 font-medium">Henüz bir bildirim yok. Yaprak kımıldamıyor.</p>
+              ) : (
+                notifications.map(n => (
+                  <div key={n._id} className={`p-4 rounded-2xl border transition-all ${n.isRead ? 'bg-gray-800/40 border-gray-700/50' : 'bg-blue-600/10 border-blue-500/30'}`}>
+                    <p className="text-sm text-gray-200 leading-relaxed font-medium">{n.message}</p>
+                    <span className="text-[10px] text-gray-500 mt-3 block font-bold tracking-wider uppercase">{formatDate(n.createdAt)}</span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* İLAN MODALI */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-300">
@@ -171,9 +223,20 @@ export default function DashboardPage() {
           <Link href="#" className="flex items-center gap-4 text-gray-400 hover:text-white hover:bg-gray-700/30 px-5 py-4 rounded-2xl transition-all">
             <span className="text-xl">🔥</span> <span className="font-medium">Kabilelerim</span>
           </Link>
-          <Link href="#" className="flex items-center gap-4 text-gray-400 hover:text-white hover:bg-gray-700/30 px-5 py-4 rounded-2xl transition-all">
-            <span className="text-xl">💬</span> <span className="font-medium">Mesajlar</span>
-          </Link>
+          
+          {/* YENİ: Bildirim Butonu */}
+          <button 
+            onClick={() => { setIsNotifOpen(true); handleMarkAsRead(); }} 
+            className="w-full flex items-center gap-4 text-gray-400 hover:text-white hover:bg-gray-700/30 px-5 py-4 rounded-2xl transition-all relative"
+          >
+            <span className="text-xl">🔔</span> <span className="font-medium">Bildirimler</span>
+            {unreadCount > 0 && (
+              <span className="absolute right-4 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]">
+                {unreadCount}
+              </span>
+            )}
+          </button>
+          
           <Link href="#" className="flex items-center gap-4 text-gray-400 hover:text-white hover:bg-gray-700/30 px-5 py-4 rounded-2xl transition-all">
             <span className="text-xl">🎯</span> <span className="font-medium">Odalarım</span>
           </Link>
@@ -199,7 +262,7 @@ export default function DashboardPage() {
       </aside>
 
       {/* ANA İÇERİK */}
-      <main className="flex-1 p-6 md:p-12 overflow-y-auto bg-gray-900">
+      <main className="flex-1 p-6 md:p-12 overflow-y-auto bg-gray-900 h-screen">
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-16 gap-6">
           <div>
             <h2 className="text-4xl font-black tracking-tight mb-2">Hoş Geldin, {user?.username || "Dostum"}!</h2>
@@ -210,7 +273,7 @@ export default function DashboardPage() {
           </button>
         </header>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12 pb-10">
           
           {/* KABİLELER BÖLÜMÜ */}
           <div className="xl:col-span-2 space-y-10">

@@ -3,36 +3,48 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 
-// Rotaları (Yolları) içe aktar
+// --- ROTALARI (ROUTES) İÇE AKTAR ---
 const authRoute = require('./routes/auth');
 const postRoute = require('./routes/posts');
 const hubRoute = require('./routes/hubs');
-const notificationRoute = require('./routes/notifications'); // YENİ: Bildirim rotası eklendi
+const notificationRoute = require('./routes/notifications');
+const messageRoute = require('./routes/messages');
+const socialRoute = require('./routes/social'); // Arkadaşlık ve Sosyal Ağ Rotası
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware
+// --- MIDDLEWARE ---
+// CORS ayarları frontend ile backend arasındaki iletişimi sağlar
 app.use(cors());
+// Gelen JSON verilerini okumamızı sağlar
 app.use(express.json());
 
-// MongoDB Bağlantısı
+// --- MONGODB BAĞLANTISI ---
 mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log('✅ MongoDB Başarıyla Bağlandı! (Hafıza Merkezi Aktif)'))
-  .catch((err) => console.log('❌ MongoDB Bağlantı Hatası:', err));
+  .then(() => {
+    console.log('✅ MongoDB Başarıyla Bağlandı! SinerjiHub Veri Merkezi Aktif.');
+  })
+  .catch((err) => {
+    console.log('❌ MongoDB Bağlantı Hatası:', err);
+  });
 
-// Rotaları Kullan
-app.use('/api/auth', authRoute);
-app.use('/api/posts', postRoute);
-app.use('/api/hubs', hubRoute);
-app.use('/api/notifications', notificationRoute); // YENİ: Bildirim rotası aktif edildi
+// --- ROTALARI KULLAN (API ENDPOINTS) ---
+// Her bir modül kendi yolu üzerinden çalışır
+app.use('/api/auth', authRoute);           // Kayıt ve Giriş İşlemleri
+app.use('/api/posts', postRoute);         // İlan ve Upvote İşlemleri
+app.use('/api/hubs', hubRoute);           // Kabile İşlemleri
+app.use('/api/notifications', notificationRoute); // Bildirim Merkezi
+app.use('/api/messages', messageRoute);   // Birebir Mesajlaşma (DM)
+app.use('/api/social', socialRoute);       // Arkadaşlık Sistemi
 
-// Test Rotası
+// --- ANA TEST ROTASI ---
 app.get('/', (req, res) => {
-  res.send('SinerjiHub Backend API Çalışıyor! 🚀');
+  res.send('SinerjiHub Backend API Sorunsuz Çalışıyor! 🚀');
 });
 
-// Sunucuyu Başlat
+// --- SUNUCUYU BAŞLAT ---
 app.listen(PORT, () => {
-  console.log(`🚀 Sunucu ${PORT} portunda çalışıyor... Kervan yolda!`);
+  console.log(`🚀 Sunucu ${PORT} portunda başarıyla ayağa kalktı...`);
+  console.log(`🌍 Kahramanmaraş'tan Dünyaya Sinerji Yayılıyor!`);
 });

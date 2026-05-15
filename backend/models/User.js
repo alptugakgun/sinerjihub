@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 
+// SinerjiHub Kullanıcı Şablonu
 const UserSchema = new mongoose.Schema({
   username: {
     type: String,
@@ -27,13 +28,32 @@ const UserSchema = new mongoose.Schema({
     type: Number,
     default: 10
   },
-  // YENİ: Kullanıcının katıldığı kabilelerin ID listesi
+  // Kullanıcının katıldığı kabilelerin ID listesi
   hubs: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Hub'
     }
   ],
+  // YENİ: Arkadaşlık Sistemi Alanları (Kısaltılmamış tam hali)
+  friends: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ],
+  friendRequests: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ], // Kullanıcıya gelen istekler
+  sentRequests: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ], // Kullanıcının gönderdiği istekler
   createdAt: {
     type: Date,
     default: Date.now,
