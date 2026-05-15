@@ -2,13 +2,13 @@ const express = require('express');
 const router = express.Router();
 const Hub = require('../models/Hub');
 const User = require('../models/User');
+const HubMessage = require('../models/HubMessage'); // YENİ: Mesaj modelini çağırdık
 
-// 1. TÜM KABİLELERİ GETİR (Eğer veritabanı boşsa varsayılan kabileleri oluşturur)
+// 1. TÜM KABİLELERİ GETİR (Varsayılanları oluşturma mantığı dahil)
 router.get('/all', async (req, res) => {
   try {
     let hubs = await Hub.find();
     
-    // Eğer hiç kabile yoksa, başlangıç kabilelerini biz oluşturalım
     if (hubs.length === 0) {
       const defaultHubs = [
         { name: "YBS Geliştiricileri", category: "Yazılım & Yönetim", icon: "💻", description: "Yönetim Bilişim Sistemleri dünyasına dair her şey." },
@@ -36,12 +36,10 @@ router.post('/join', async (req, res) => {
     
     if (!hub || !user) return res.status(404).json({ message: "Kullanıcı veya Kabile bulunamadı." });
 
-    // Zaten üye mi?
     if (hub.members.includes(userId)) {
       return res.status(400).json({ message: "Bu kabileye zaten üyesin dostum!" });
     }
 
-    // Karşılıklı kayıt: Kabileyi kullanıcıya, kullanıcıyı kabileye ekle
     hub.members.push(userId);
     user.hubs.push(hubId);
     
@@ -51,6 +49,53 @@ router.post('/join', async (req, res) => {
     res.status(200).json({ message: "Kabileye başarıyla kabul edildin!", hub });
   } catch (err) {
     res.status(500).json({ message: "Kabileye katılım başarısız.", error: err.message });
+  }
+});
+
+// 3. YENİ: TEK BİR KABİLENİN DETAYLARINI GETİR
+router.get('/:id', async (req, res) => {
+  try {
+    // Kabile bilgisini alırken, üyelerin isimlerini ve karma puanlarını da yanına ekle (.populate)
+    const hub = await Hub.findById(req.params.id).populate('members', 'username karmaPoints');
+    if (!hub) return res.status(404).json({ message: "Kabile bulunamadı." });
+    
+    res.status(200).json(hub);
+  } catch (err) {
+    res.status(500).json({ message: "Kabile bilgisi getirilemedi.", error: err.message });
+  }
+});
+
+// 4. YENİ: KABİLENİN SOHBET MESAJLARINI GETİR
+router.get('/:id/messages', async (req, res) => {
+  try {
+    // Eskiden yeniye doğru sırala (1)
+    const messages = await HubMessage.find({ hub: req.params.id }).sort({ createdAt: 1 });
+    res.status(200).json(messages);
+  } catch (err) {
+    res.status(500).json({ message: "Mesajlar getirilemedi.", error: err.message });
+  }
+});
+
+// 5. YENİ: KABİLE ODASINA MESAJ GÖNDER
+router.post('/:id/messages/create', async (req, res) => {
+  try {
+    const { userId, content } = req.body;
+    const hubId = req.params.id;
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+
+    const newMessage = new HubMessage({
+      hub: hubId,
+      user: userId,
+      username: user.username,
+      content
+    });
+
+    const savedMessage = await newMessage.save();
+    res.status(201).json(savedMessage);
+  } catch (err) {
+    res.status(500).json({ message: "Mesaj gönderilemedi.", error: err.message });
   }
 });
 
