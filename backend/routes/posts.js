@@ -3,18 +3,16 @@ const router = express.Router();
 const Post = require('../models/Post');
 const User = require('../models/User');
 
-// 1. YENİ İLAN OLUŞTURMA (POST)
+// --- 1. YENİ İLAN OLUŞTURMA ---
 router.post('/create', async (req, res) => {
   try {
     const { userId, content, tags } = req.body;
 
-    // İlanı atan kullanıcının adını bulalım ki ilanda görünsün
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-    // Şablona göre yeni ilan oluştur
     const newPost = new Post({
       user: userId,
       username: user.username || "Gezgin",
@@ -29,14 +27,23 @@ router.post('/create', async (req, res) => {
   }
 });
 
-// 2. TÜM İLANLARI GETİRME (GET)
+// --- 2. TÜM İLANLARI GETİRME ---
 router.get('/all', async (req, res) => {
   try {
-    // En yeni ilanlar en üstte gelsin diye sort({ createdAt: -1 }) yapıyoruz
     const posts = await Post.find().sort({ createdAt: -1 });
     res.status(200).json(posts);
   } catch (err) {
     res.status(500).json({ message: "İlanlar getirilemedi.", error: err.message });
+  }
+});
+
+// --- 3. YENİ: BELİRLİ BİR KULLANICININ İLANLARINI GETİRME (PROFİL İÇİN) ---
+router.get('/user/:userId', async (req, res) => {
+  try {
+    const userPosts = await Post.find({ user: req.params.userId }).sort({ createdAt: -1 });
+    res.status(200).json(userPosts);
+  } catch (err) {
+    res.status(500).json({ message: "Kullanıcı ilanları getirilemedi.", error: err.message });
   }
 });
 
