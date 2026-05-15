@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 export default function HubDetailPage() {
-  const { id: hubId } = useParams(); // URL'den kabilenin ID'sini alıyoruz
+  const { id: hubId } = useParams();
   const router = useRouter();
 
   const [hub, setHub] = useState(null);
@@ -16,7 +16,6 @@ export default function HubDetailPage() {
 
   const messagesEndRef = useRef(null);
 
-  // Yeni mesaj geldiğinde en alta otomatik kaydırma motoru
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -31,18 +30,21 @@ export default function HubDetailPage() {
       }
 
       try {
-        // 1. Kullanıcı Bilgisini Çek (Mesaj atarken adını kullanmak için)
+        // 1. Kullanıcı Bilgisini Çek
         const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
         if (userRes.ok) {
           const userData = await userRes.json();
           setCurrentUser(userData);
 
-          // Güvenlik: Kullanıcı bu kabileye üye mi? (Değilse Dashboard'a geri at)
+          // Güvenlik: Kullanıcı bu kabileye üye mi?
           if (!userData.hubs.includes(hubId)) {
-            alert("Bu kabile odasına girmek için önce üye olmalısın dostum!");
+            alert("Bu çalışma odasına girmek için kabileye katılmalısın dostum!");
             router.push("/dashboard");
             return;
           }
+        } else {
+          router.push("/login");
+          return;
         }
 
         // 2. Kabile Detaylarını ve Üyelerini Çek
@@ -69,12 +71,10 @@ export default function HubDetailPage() {
     fetchHubData();
   }, [hubId, router]);
 
-  // Mesajlar yüklendiğinde en alta kaydır
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  // YENİ MESAJ GÖNDERME MOTORU
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -91,9 +91,8 @@ export default function HubDetailPage() {
 
       if (res.ok) {
         const savedMessage = await res.json();
-        // Yeni mesajı mevcut listeye ekle (Ekran anında güncellenir)
         setMessages([...messages, savedMessage]);
-        setNewMessage(""); // Kutuyu temizle
+        setNewMessage("");
       } else {
         alert("Mesaj gönderilemedi.");
       }
@@ -104,111 +103,134 @@ export default function HubDetailPage() {
   };
 
   const formatDate = (dateString) => {
-    const options = { hour: '2-digit', minute:'2-digit' };
-    return new Date(dateString).toLocaleTimeString('tr-TR', options);
+    return new Date(dateString).toLocaleTimeString('tr-TR', { hour: '2-digit', minute:'2-digit' });
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
-        <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-xl font-medium text-gray-400">Çalışma Odasına Bağlanılıyor...</p>
+        <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-gray-400 font-bold tracking-widest uppercase text-[10px]">Odaya Bağlanılıyor...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex flex-col md:flex-row">
+    <div className="min-h-screen bg-gray-900 text-white flex flex-col md:flex-row font-sans selection:bg-indigo-500/30 overflow-hidden">
       
-      {/* SOL KOLON: Kabile Bilgileri ve Üyeler */}
-      <aside className="w-full md:w-80 bg-gray-800/50 border-r border-gray-700 flex flex-col p-6 backdrop-blur-xl md:h-screen md:sticky md:top-0">
-        <Link href="/dashboard" className="text-gray-400 hover:text-white transition-colors mb-8 flex items-center gap-2 text-sm font-medium">
-          ← Ana Üsse Dön
+      {/* SOL KOLON: KABİLE DETAYLARI VE ÜYELER */}
+      <aside className="w-full md:w-80 bg-gray-800/40 border-r border-gray-700/50 flex flex-col p-6 backdrop-blur-2xl md:h-screen md:sticky md:top-0 z-20">
+        
+        <Link href="/dashboard" className="text-gray-500 hover:text-white transition-all mb-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest group">
+          <span className="group-hover:-translate-x-1 transition-transform">←</span> ANA ÜSSE DÖN
         </Link>
         
-        <div className="text-center mb-8 pb-8 border-b border-gray-700">
-          <div className="text-6xl mb-4">{hub?.icon}</div>
-          <h1 className="text-2xl font-bold mb-2">{hub?.name}</h1>
-          <span className="text-xs font-medium bg-gray-700/50 px-3 py-1 rounded-full text-gray-300 uppercase tracking-wider">
+        <div className="text-center mb-8 pb-8 border-b border-gray-700/50 relative">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl -z-10"></div>
+          <div className="text-6xl mb-4 drop-shadow-2xl">{hub?.icon}</div>
+          <h1 className="text-2xl font-black mb-2 tracking-tighter italic uppercase">{hub?.name}</h1>
+          <span className="text-[9px] font-black bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-full text-indigo-400 uppercase tracking-widest">
             {hub?.category}
           </span>
-          <p className="text-sm text-gray-400 mt-4 leading-relaxed">
+          <p className="text-xs text-gray-400 mt-5 leading-relaxed font-medium">
             {hub?.description}
           </p>
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-2">
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-4 flex justify-between items-center">
-            Kabile Üyeleri
-            <span className="bg-gray-700 text-gray-300 px-2 py-0.5 rounded-md">{hub?.members?.length || 0}</span>
+        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4 flex justify-between items-center">
+            Ağdaki Üyeler
+            <span className="bg-gray-800 border border-gray-700 text-gray-400 px-2 py-1 rounded-md text-[9px]">{hub?.members?.length || 0}</span>
           </h3>
-          <div className="space-y-3">
-            {hub?.members?.map(member => (
-              <div key={member._id} className="flex items-center gap-3 p-2 rounded-xl hover:bg-gray-700/30 transition-all cursor-default">
-                <div className="w-8 h-8 bg-gradient-to-tr from-blue-500 to-purple-500 rounded-full flex items-center justify-center font-bold text-sm shadow-lg flex-shrink-0">
-                  {member.username.charAt(0).toUpperCase()}
+          <div className="space-y-2">
+            {hub?.members?.map(member => {
+              const isMe = member._id === currentUser?._id;
+              return (
+                <div key={member._id} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${isMe ? 'bg-indigo-600/10 border border-indigo-500/20' : 'hover:bg-gray-800/50 border border-transparent'}`}>
+                  <div className="w-8 h-8 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-full flex items-center justify-center font-black text-xs shadow-lg border border-white/5 flex-shrink-0">
+                    {member.username.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="overflow-hidden flex-1">
+                    <p className={`text-xs font-bold truncate ${isMe ? 'text-indigo-400' : 'text-gray-200'}`}>
+                      {member.username} {isMe && "(Sen)"}
+                    </p>
+                    <p className="text-[9px] text-gray-500 font-bold tracking-tighter">{member.karmaPoints} KARMA</p>
+                  </div>
                 </div>
-                <div className="overflow-hidden flex-1">
-                  <p className="text-sm font-medium truncate text-gray-200">{member.username}</p>
-                </div>
-                <div className="text-[10px] bg-blue-500/20 text-blue-400 px-2 py-1 rounded whitespace-nowrap">
-                  {member.karmaPoints} 🌟
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       </aside>
 
-      {/* SAĞ KOLON: Sohbet ve Mesajlaşma Odası */}
-      <main className="flex-1 flex flex-col h-[calc(100vh-80px)] md:h-screen relative">
+      {/* SAĞ KOLON: SOHBET ODASI */}
+      <main className="flex-1 flex flex-col h-[calc(100vh-80px)] md:h-screen relative bg-[#0a0f1c]">
         
-        {/* Üst Karşılama Barı */}
-        <header className="p-6 border-b border-gray-700 bg-gray-900/80 backdrop-blur-md z-10 sticky top-0">
-          <h2 className="text-xl font-bold">Çalışma Odası</h2>
-          <p className="text-xs text-gray-400 mt-1">Bu odadaki mesajları sadece kabile üyeleri görebilir.</p>
+        {/* SOHBET ÜST BARI */}
+        <header className="px-8 py-5 border-b border-gray-800/80 bg-gray-900/80 backdrop-blur-xl z-10 flex justify-between items-center">
+          <div>
+            <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              Çalışma Odası
+            </h2>
+            <p className="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-widest">Sadece kabile üyeleri görebilir</p>
+          </div>
+          <div className="hidden md:flex -space-x-2">
+            {hub?.members?.slice(0,3).map((m,i) => (
+              <div key={i} className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-[10px] font-bold text-gray-400 z-10">{m.username[0].toUpperCase()}</div>
+            ))}
+            {hub?.members?.length > 3 && <div className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-[10px] font-bold text-gray-400 z-0">+{hub.members.length - 3}</div>}
+          </div>
         </header>
 
-        {/* Mesajların Aktığı Alan */}
-        <div className="flex-1 p-6 overflow-y-auto space-y-6 scroll-smooth bg-[#0B1120]">
+        {/* MESAJ AKIŞI */}
+        <div className="flex-1 p-4 md:p-8 overflow-y-auto space-y-6 custom-scrollbar bg-grid-slate-900/[0.04]">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
-              <span className="text-6xl opacity-50">📭</span>
-              <p>Bu kabilede henüz yaprak kımıldamıyor. İlk mesajı sen at!</p>
+              <span className="text-6xl opacity-20 drop-shadow-2xl">{hub?.icon}</span>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-600">Bu kabilede sessizlik hakim. Sinerjiyi başlat!</p>
             </div>
           ) : (
-            messages.map((msg) => {
+            messages.map((msg, index) => {
               const isMe = msg.user === currentUser?._id;
+              // Önceki mesajla aynı kişiyse ismi tekrar yazmamak için basit kontrol
+              const showName = index === 0 || messages[index - 1].user !== msg.user;
+              
               return (
-                <div key={msg._id} className={`flex flex-col max-w-[80%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}>
-                  {!isMe && <span className="text-xs text-gray-400 mb-1 ml-1 font-medium">{msg.username}</span>}
-                  <div className={`px-5 py-3 rounded-2xl shadow-md ${isMe ? "bg-blue-600 text-white rounded-tr-sm" : "bg-gray-800 text-gray-200 rounded-tl-sm border border-gray-700"}`}>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                <div key={msg._id} className={`flex flex-col max-w-[85%] md:max-w-[70%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}>
+                  {!isMe && showName && (
+                    <span className="text-[10px] text-gray-500 mb-1 ml-2 font-bold tracking-widest uppercase">{msg.username}</span>
+                  )}
+                  <div className={`px-5 py-3.5 shadow-xl ${
+                    isMe 
+                    ? "bg-indigo-600 text-white rounded-2xl rounded-tr-sm" 
+                    : "bg-gray-800/80 text-gray-200 border border-gray-700/50 rounded-2xl rounded-tl-sm backdrop-blur-sm"
+                  }`}>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{msg.content}</p>
                   </div>
-                  <span className="text-[10px] text-gray-500 mt-1 mx-1">{formatDate(msg.createdAt)}</span>
+                  <span className={`text-[9px] text-gray-600 mt-1.5 font-bold ${isMe ? "mr-1" : "ml-1"}`}>{formatDate(msg.createdAt)}</span>
                 </div>
               );
             })
           )}
-          {/* Scroll için referans noktası */}
-          <div ref={messagesEndRef} />
+          <div ref={messagesEndRef} className="h-1" />
         </div>
 
-        {/* Mesaj Gönderme Kutusu */}
-        <div className="p-4 border-t border-gray-700 bg-gray-800/80 backdrop-blur-md">
-          <form onSubmit={handleSendMessage} className="flex gap-3 max-w-4xl mx-auto">
+        {/* MESAJ GÖNDERME KUTUSU */}
+        <div className="p-4 md:p-6 border-t border-gray-800/80 bg-gray-900/90 backdrop-blur-xl">
+          <form onSubmit={handleSendMessage} className="flex gap-3 max-w-5xl mx-auto relative">
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
               placeholder={`${hub?.name} kabilesine mesaj gönder...`}
-              className="flex-1 bg-gray-900 border border-gray-600 rounded-full px-6 py-3.5 text-sm text-white focus:outline-none focus:border-blue-500 transition-all shadow-inner"
+              className="flex-1 bg-gray-800/50 border border-gray-700/50 rounded-full pl-6 pr-32 py-4 text-sm text-white outline-none focus:border-indigo-500/50 focus:bg-gray-800 transition-all shadow-inner"
               autoComplete="off"
             />
             <button
               type="submit"
               disabled={isSending || !newMessage.trim()}
-              className="bg-blue-600 hover:bg-blue-500 text-white rounded-full px-8 py-3.5 font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(37,99,235,0.3)] flex-shrink-0"
+              className="absolute right-2 top-2 bottom-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full px-6 font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(79,70,229,0.3)]"
             >
               {isSending ? "..." : "Gönder"}
             </button>
