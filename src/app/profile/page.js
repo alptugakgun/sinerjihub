@@ -9,7 +9,9 @@ export default function ProfilePage() {
   const [user, setUser] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isUploading, setIsUploading] = useState(false);
 
+  // Profil verilerini ve kullanıcının ilanlarını çeken ana motor
   useEffect(() => {
     const fetchProfileData = async () => {
       const userId = localStorage.getItem("userId");
@@ -20,7 +22,7 @@ export default function ProfilePage() {
       }
 
       try {
-        // 1. Kullanıcı Verisini Çek (Arkadaş ve Kabile referanslarıyla)
+        // 1. Kullanıcı Verisini Çek
         const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
         if (userRes.ok) {
           const userData = await userRes.json();
@@ -48,6 +50,49 @@ export default function ProfilePage() {
     fetchProfileData();
   }, [router]);
 
+  // --- YENİ: FOTOĞRAFI GÖRÜP BASE64'E ÇEVİREN VE SUNUCUYA ATAN MOTOR ---
+  const handleImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Dosya boyutu kontrolü (Base64 veritabanını yormasın diye 2MB sınırı koyuyoruz)
+    if (file.size > 2 * 1024 * 1024) {
+      alert("Fotoğraf boyutu çok büyük dostum! Maksimum 2MB bir görsel seçmelisin.");
+      return;
+    }
+
+    setIsUploading(true);
+    const userId = localStorage.getItem("userId");
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file); // Görseli oku ve Base64 string'e dönüştür
+    reader.onloadend = async () => {
+      const base64Image = reader.result;
+
+      try {
+        const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/update-avatar/${userId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profilePicture: base64Image }),
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          alert("Profil fotoğrafın başarıyla güncellendi! 🎉");
+          // Arayüzü anında güncellemek için user state'ini yeniliyoruz
+          setUser({ ...user, profilePicture: base64Image });
+        } else {
+          alert(data.message || "Fotoğraf yüklenemedi.");
+        }
+      } catch (err) {
+        alert("Sunucuyla bağlantı hatası oluştu.");
+      } finally {
+        setIsUploading(false);
+      }
+    };
+  };
+
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('tr-TR', { month: 'long', day: 'numeric', year: 'numeric' });
   };
@@ -56,7 +101,7 @@ export default function ProfilePage() {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
         <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-400 font-medium tracking-widest uppercase text-xs">Profil Yükleniyor...</p>
+        <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px]">Profil Dünyası Yükleniyor...</p>
       </div>
     );
   }
@@ -83,10 +128,26 @@ export default function ProfilePage() {
           <div className="absolute -right-20 -top-20 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -z-10"></div>
           <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl -z-10"></div>
           
-          <div className="w-32 h-32 md:w-40 md:h-40 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center font-black text-6xl shadow-2xl ring-4 ring-gray-900 relative">
-            {user?.username?.[0].toUpperCase()}
-            <div className="absolute bottom-0 right-0 bg-gray-900 rounded-full p-2">
-              <span className="text-xl">🌟</span>
+          {/* FOTOĞRAF DEĞİŞTİRME ALANI */}
+          <div className="relative group cursor-pointer flex-shrink-0">
+            <div className="w-32 h-32 md:w-40 md:h-40 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center font-black text-6xl shadow-2xl ring-4 ring-gray-900 overflow-hidden relative">
+              {user?.profilePicture ? (
+                <img src={user.profilePicture} alt="Profil" className="w-full h-full object-cover" />
+              ) : (
+                user?.username?.[0].toUpperCase()
+              )}
+              
+              {/* Üzerine gelince açılan havalı panel */}
+              <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] font-black uppercase tracking-widest text-white transition-opacity duration-200 cursor-pointer">
+                <span>{isUploading ? "Yükleniyor..." : "Değiştir 📸"}</span>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleImageUpload} 
+                  className="hidden" 
+                  disabled={isUploading}
+                />
+              </label>
             </div>
           </div>
           
@@ -144,7 +205,7 @@ export default function ProfilePage() {
             <div className="space-y-6">
               {userPosts.length === 0 ? (
                 <div className="bg-gray-800/20 border border-dashed border-gray-700 p-12 rounded-[2rem] text-center">
-                  <p className="text-gray-500 font-bold text-sm">Hiç ilan açmamışsın. Sinerjiyi başlatmak için ana üsse dön ve ilk çağrını yap!</p>
+                  <p className="text-gray-500 font-bold text-sm">Hiç ilan açmamışsın. Sinerjiyi başlatmak için ana üsse dön macro çağrını yap!</p>
                 </div>
               ) : (
                 userPosts.map(post => (
