@@ -59,7 +59,6 @@ router.post('/login', async (req, res) => {
 // --- 3. KULLANICI BİLGİSİ GETİRME ---
 router.get('/user/:id', async (req, res) => {
   try {
-    // Şifreyi hariç tutarak tüm verileri getir
     const user = await User.findById(req.params.id).select('-password');
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
@@ -70,10 +69,10 @@ router.get('/user/:id', async (req, res) => {
   }
 });
 
-// --- 4. YENİ: PROFİL FOTOĞRAFI GÜNCELLEME ---
+// --- 4. PROFİL FOTOĞRAFI GÜNCELLEME ---
 router.put('/update-avatar/:id', async (req, res) => {
   try {
-    const { profilePicture } = req.body; // Base64 formatındaki fotoğraf verisi
+    const { profilePicture } = req.body; 
     
     if (!profilePicture) {
       return res.status(400).json({ message: "Fotoğraf verisi boş olamaz." });
@@ -88,6 +87,27 @@ router.put('/update-avatar/:id', async (req, res) => {
     res.status(200).json({ message: "Profil fotoğrafı başarıyla güncellendi!", user: updatedUser });
   } catch (err) {
     res.status(500).json({ message: "Fotoğraf yüklenemedi.", error: err.message });
+  }
+});
+
+// --- 5. YENİ: SİNERJİ RADARI (YAPAY ZEKA / EŞLEŞTİRME ALGORİTMASI) ---
+router.get('/recommendations/:id', async (req, res) => {
+  try {
+    const currentUser = await User.findById(req.params.id);
+    if (!currentUser) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+
+    // Kullanıcının ilgi alanlarına (interests) sahip olan, 
+    // ama kendisi olmayan ve halihazırda arkadaşı OLMAYAN kişileri bul
+    const recommendedUsers = await User.find({
+      _id: { $ne: currentUser._id, $nin: currentUser.friends },
+      interests: { $in: currentUser.interests }
+    })
+    .limit(4) // Sadece en uygun 4 kişiyi öner
+    .select('username profilePicture karmaPoints interests');
+
+    res.status(200).json(recommendedUsers);
+  } catch (err) {
+    res.status(500).json({ message: "Sinerji radarı çalıştırılamadı.", error: err.message });
   }
 });
 

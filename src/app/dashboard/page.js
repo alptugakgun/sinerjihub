@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { io } from "socket.io-client";
+import { Toaster, toast } from "react-hot-toast"; // YENİ: Bildirim Baloncukları
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export default function DashboardPage() {
   const [notifications, setNotifications] = useState([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [friendRequests, setFriendRequests] = useState([]);
+  const [recommendations, setRecommendations] = useState([]); // YENİ: Sinerji Radarı Sonuçları
   
   // --- İLAN AÇMA MODALI DURUMLARI ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -53,6 +55,18 @@ export default function DashboardPage() {
         sender: data.sender,
         content: data.content,
         createdAt: Date.now(),
+      });
+      
+      // YENİ: Ekrana Şık Bir Bildirim Baloncuğu Fırlat
+      toast('Sinyal: Yeni bir DM aldın! 💬', {
+        style: {
+          borderRadius: '1rem',
+          background: '#1f2937',
+          color: '#fff',
+          border: '1px solid #374151',
+          fontSize: '12px',
+          fontWeight: 'bold'
+        },
       });
     });
 
@@ -91,6 +105,10 @@ export default function DashboardPage() {
         const friendRes = await fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`);
         setFriendRequests(await friendRes.json());
 
+        // YENİ: Sinerji Radarından Eşleşmeleri Çek
+        const recRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/recommendations/${userId}`);
+        setRecommendations(await recRes.json());
+
       } catch (error) { 
         console.error("Veri yüklenirken hata oluştu:", error); 
       } finally { 
@@ -106,6 +124,8 @@ export default function DashboardPage() {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, { method: "POST" });
       const data = await res.json();
       alert(data.message);
+      // İstek atılan kişiyi radar listesinden de çıkaralım ki bir daha görünmesin
+      setRecommendations(recommendations.filter(rec => rec._id !== targetId));
     } catch (err) { alert("İstek gönderilemedi."); }
   };
 
@@ -114,7 +134,7 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/accept/${userId}/${friendId}`, { method: "POST" });
       if (res.ok) {
-        alert("Artık arkadaşsınız! ✨");
+        toast.success("Artık arkadaşsınız! ✨", { style: { background: '#1f2937', color: '#fff' } });
         setFriendRequests(friendRequests.filter(req => req._id !== friendId));
         const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
         setUser(updatedUser);
@@ -173,8 +193,8 @@ export default function DashboardPage() {
         const newPost = await res.json();
         setPosts([newPost, ...posts]);
         setPostContent(""); setPostTags(""); setIsModalOpen(false);
-        // İlan açınca karma puanı artışı (Frontend tarafında anlık yansıtma)
         setUser({ ...user, karmaPoints: (user.karmaPoints || 0) + 5 });
+        toast.success("İlan başarıyla yayınlandı! +5 Karma", { style: { background: '#1f2937', color: '#fff' } });
       }
     } catch (err) { alert("İlan paylaşılamadı."); }
     setIsPosting(false);
@@ -203,7 +223,7 @@ export default function DashboardPage() {
         body: JSON.stringify({ userId, hubId }),
       });
       if (res.ok) {
-        alert("Kabileye başarıyla katıldın!");
+        toast.success("Kabileye başarıyla katıldın!", { style: { background: '#1f2937', color: '#fff' } });
         setUser({ ...user, hubs: [...(user.hubs || []), hubId], karmaPoints: (user.karmaPoints || 0) + 10 });
       }
     } catch (err) { console.error(err); }
@@ -213,7 +233,6 @@ export default function DashboardPage() {
     return new Date(dateString).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  // --- YENİ: SİNERJİ RÜTBE HESAPLAYICI (OYUNLAŞTIRMA MOTORU) ---
   const getKarmaRank = (karma) => {
     if (karma < 50) return { title: "Sinerji Çaylağı", icon: "🌱", color: "text-green-400", border: "border-green-500/30", bg: "bg-green-500/10" };
     if (karma < 150) return { title: "Ağ Gezgini", icon: "🌍", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10" };
@@ -246,6 +265,9 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-900 text-white flex relative overflow-hidden font-sans pb-20 md:pb-0">
       
+      {/* YENİ: Bildirim Baloncukları Yöneticisi */}
+      <Toaster position="top-center" reverseOrder={false} />
+
       {/* --- DM PENCERESİ --- */}
       {isDmOpen && (
         <div className="fixed bottom-0 right-0 md:right-6 w-full md:w-80 bg-gray-800 border border-gray-700 rounded-t-2xl shadow-2xl z-[70] flex flex-col h-[450px] animate-in slide-in-from-bottom duration-300">
@@ -343,15 +365,12 @@ export default function DashboardPage() {
         </nav>
         
         <div className="mt-auto pt-8 border-t border-gray-700/50 flex flex-col gap-4">
-          
-          {/* YENİ: RÜTBE ROZETİ EKLENDİ */}
           <div className={`flex items-center gap-2 ${userRank.bg} border ${userRank.border} p-3 rounded-2xl justify-center shadow-inner`}>
             <span className="text-lg">{userRank.icon}</span>
             <div className="flex flex-col">
               <span className={`text-[10px] font-black uppercase tracking-widest ${userRank.color}`}>{userRank.title}</span>
             </div>
           </div>
-
           <div className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-2xl border border-gray-700/50">
             <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm border-2 border-white/10 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-600 flex-shrink-0">
               {user?.profilePicture ? (
@@ -375,13 +394,11 @@ export default function DashboardPage() {
           <span className="text-xl">🏠</span>
           <span className="text-[9px] font-black uppercase tracking-widest">Ana Üs</span>
         </Link>
-        
         <button onClick={() => setIsModalOpen(true)} className="flex flex-col items-center gap-1 -mt-8 relative group">
           <div className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-900/50 border-4 border-gray-900 group-hover:scale-105 transition-transform">
             <span className="text-2xl text-white">+</span>
           </div>
         </button>
-
         <button onClick={() => setIsNotifOpen(true)} className="flex flex-col items-center gap-1 text-gray-500 hover:text-white transition-colors relative">
           <span className="text-xl">🔔</span>
           <span className="text-[9px] font-black uppercase tracking-widest">Akış</span>
@@ -389,7 +406,6 @@ export default function DashboardPage() {
              <span className="absolute top-0 right-1 bg-red-500 w-2 h-2 rounded-full border border-gray-900"></span>
           )}
         </button>
-
         <Link href="/profile" className="flex flex-col items-center gap-1 text-gray-500 hover:text-white transition-colors">
           <div className="w-7 h-7 rounded-full overflow-hidden border-2 border-gray-600 bg-gray-800 flex items-center justify-center text-[10px] font-bold">
             {user?.profilePicture ? (
@@ -407,7 +423,6 @@ export default function DashboardPage() {
           <div>
             <h2 className="text-3xl md:text-4xl font-black tracking-tighter mb-2 italic flex items-center gap-3 flex-wrap">
               HOŞ GELDİN, {user?.username.toUpperCase()}! 👋
-              {/* YENİ: MOBİLDE DE GÖRÜNEN ANA RÜTBE ETİKETİ */}
               <span className={`text-xs ${userRank.bg} border ${userRank.border} ${userRank.color} px-3 py-1.5 rounded-full whitespace-nowrap shadow-sm`}>
                 {userRank.icon} {userRank.title}
               </span>
@@ -432,17 +447,6 @@ export default function DashboardPage() {
               <button onClick={() => setSearchQuery("")} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors text-lg">✖</button>
             )}
           </div>
-          <div className="flex gap-2 mt-4 overflow-x-auto custom-scrollbar pb-2 max-w-3xl">
-            {["#Yazılım", "#Kimya", "#LGS", "#YKS", "#Girişim", "#Matematik"].map(tag => (
-              <button 
-                key={tag} 
-                onClick={() => setSearchQuery(tag.replace("#", ""))} 
-                className="bg-gray-800/40 border border-gray-700/50 hover:bg-gray-700 hover:border-gray-500 hover:text-blue-400 px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest text-gray-400 transition-all whitespace-nowrap"
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
@@ -450,7 +454,7 @@ export default function DashboardPage() {
           {/* Kabile Keşfi Bölümü */}
           <div className="xl:col-span-2 space-y-8">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black tracking-tight italic">KABİLE KEŞFİ {searchQuery && <span className="text-blue-400 text-sm ml-2">({filteredHubs.length})</span>}</h3>
+              <h3 className="text-xl font-black tracking-tight italic">KABİLE KEŞFİ</h3>
               <span className="h-[1px] flex-1 bg-gray-800 mx-6"></span>
             </div>
             
@@ -483,10 +487,39 @@ export default function DashboardPage() {
             )}
           </div>
 
-          {/* İlanlar Bölümü */}
+          {/* Sağ Kolon: Sinerji Radarı ve İlanlar */}
           <div className="space-y-8">
+            
+            {/* --- YENİ: SİNERJİ RADARI --- */}
+            <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/10 border border-indigo-500/30 p-6 rounded-[2rem] relative overflow-hidden">
+              <div className="absolute -right-4 -top-4 text-6xl opacity-20">📡</div>
+              <h3 className="text-sm font-black tracking-widest uppercase mb-4 text-indigo-400">Sinerji Radarı</h3>
+              {recommendations.length === 0 ? (
+                  <p className="text-[10px] text-gray-400 font-medium">Sistem şu an sana uygun bir eşleşme bulamadı.</p>
+              ) : (
+                  <div className="space-y-3">
+                      {recommendations.map(rec => (
+                          <div key={rec._id} className="flex items-center justify-between bg-gray-900/50 p-3 rounded-2xl border border-gray-700/50 hover:border-indigo-500/50 transition-all">
+                             <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center text-xs font-bold overflow-hidden flex-shrink-0">
+                                      {rec.profilePicture ? <img src={rec.profilePicture} className="w-full h-full object-cover"/> : rec.username[0].toUpperCase()}
+                                  </div>
+                                  <div className="overflow-hidden">
+                                      <p className="text-xs font-bold text-gray-200 truncate">{rec.username}</p>
+                                      <p className="text-[9px] text-indigo-400 font-black">{rec.karmaPoints} KARMA</p>
+                                  </div>
+                             </div>
+                             <button onClick={() => handleSendFriendRequest(rec._id)} className="text-[9px] bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white px-3 py-2 rounded-xl font-black transition-all uppercase tracking-widest">
+                                 Bağ Kur
+                             </button>
+                          </div>
+                      ))}
+                  </div>
+              )}
+            </div>
+
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black tracking-tight italic">SON SİNERJİ {searchQuery && <span className="text-blue-400 text-sm ml-2">({filteredPosts.length})</span>}</h3>
+              <h3 className="text-xl font-black tracking-tight italic">SON SİNERJİ</h3>
               <span className="h-[1px] flex-1 bg-gray-800 ml-6"></span>
             </div>
             
