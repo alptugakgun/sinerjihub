@@ -1,94 +1,121 @@
 "use client";
-import { useState } from "react";
-import Link from "next/link";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Toaster, toast } from "react-hot-toast";
 
 export default function LoginPage() {
-  const [isLogin, setIsLogin] = useState(true);
   const router = useRouter();
-
-  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [errorMsg, setErrorMsg] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  // Sayfa yüklendiğinde eski/bozuk ID varsa hafızayı temizle ki döngüye girmesin
+  useEffect(() => {
+    localStorage.removeItem("userId");
+  }, []);
+
+  const handleLogin = async (e) => {
     e.preventDefault();
-    setErrorMsg("");
     setIsLoading(true);
 
-    const endpoint = isLogin ? "login" : "register";
-    const bodyData = isLogin ? { email, password } : { username, email, password };
-
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/${endpoint}`, {
+      const res = await fetch("https://sinerjihub-1.onrender.com/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyData),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await res.json();
 
       if (res.ok) {
-        localStorage.setItem("userId", data.userId);
+        // İŞTE BÜTÜN SORUNU ÇÖZEN O KRİTİK SATIR! (data.id değil, data._id)
+        localStorage.setItem("userId", data._id);
+        
+        toast.success("SinerjiHub'a hoş geldin! Yönlendiriliyorsun...", {
+          style: { background: '#1f2937', color: '#fff', border: '1px solid #374151' }
+        });
 
-        if (isLogin) {
+        // Baloncuk görünsün diye 1 saniye bekleyip Dashboard'a atıyoruz
+        setTimeout(() => {
           router.push("/dashboard");
-        } else {
-          router.push("/onboarding");
-        }
+        }, 1000);
+        
       } else {
-        setErrorMsg(data.message);
+        // Şifre yanlışsa veya e-posta yoksa backend'den gelen hatayı baloncukla göster
+        toast.error(data.message || "Giriş başarısız.", {
+          style: { background: '#7f1d1d', color: '#fff', border: '1px solid #991b1b' }
+        });
+        setIsLoading(false);
       }
     } catch (err) {
-      setErrorMsg("Sunucuya bağlanılamadı. Backend çalışıyor mu?");
+      toast.error("Sunucuya ulaşılamıyor. Render uyanıyor olabilir, biraz bekle dostum.", {
+        style: { background: '#7f1d1d', color: '#fff', border: '1px solid #991b1b' }
+      });
+      setIsLoading(false);
     }
-    
-    setIsLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4 relative overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-blue-600/20 rounded-full blur-[150px] -z-10 pointer-events-none"></div>
+    <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6 font-sans relative overflow-hidden bg-grid-slate-900/[0.04]">
+      
+      {/* Bildirim Baloncukları */}
+      <Toaster position="top-center" reverseOrder={false} />
 
-      <div className="w-full max-w-md bg-gray-800/50 backdrop-blur-xl border border-gray-700 rounded-3xl p-8 shadow-2xl">
-        <div className="text-center mb-8">
-          <Link href="/" className="text-gray-400 hover:text-white text-sm transition-colors mb-4 inline-block">← Ana Sayfaya Dön</Link>
-          <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
-            {isLogin ? "Tekrar Hoş Geldin!" : "Kabileye Katıl"}
-          </h2>
-          <p className="text-gray-400 mt-2 text-sm">
-            {isLogin ? "Maceraya kaldığın yerden devam et." : "SinerjiHub'ın bir parçası olmak için ilk adım."}
-          </p>
+      {/* Arka Plan Efektleri */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] -z-10 animate-pulse"></div>
+      
+      <div className="w-full max-w-md bg-gray-900/60 backdrop-blur-xl border border-gray-800 rounded-[2.5rem] p-10 shadow-2xl">
+        <div className="text-center mb-10">
+          <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 tracking-tighter italic mb-2">
+            SINERJIHUB
+          </h1>
+          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Ekosisteme Giriş Yap</p>
         </div>
 
-        {errorMsg && <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-xl text-red-400 text-sm text-center">{errorMsg}</div>}
+        <form onSubmit={handleLogin} className="space-y-6">
+          <div>
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 ml-2">E-Posta Adresi</label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full bg-gray-800/50 border border-gray-700 rounded-2xl px-5 py-4 text-sm text-white outline-none focus:border-blue-500/50 transition-all shadow-inner"
+              placeholder="gezgin@sinerjihub.com"
+            />
+          </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit}>
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Kullanıcı Adı</label>
-              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full bg-gray-900/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="Kullanıcı Adın" required={!isLogin} />
-            </div>
-          )}
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">E-posta</label>
-            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-gray-900/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="ornek@mail.com" required />
+            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 ml-2">Şifre</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full bg-gray-800/50 border border-gray-700 rounded-2xl px-5 py-4 text-sm text-white outline-none focus:border-blue-500/50 transition-all shadow-inner"
+              placeholder="••••••••"
+            />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Şifre</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-gray-900/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all" placeholder="••••••••" required />
-          </div>
-          <button type="submit" disabled={isLoading} className="w-full flex justify-center bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition-all disabled:opacity-50">
-            {isLoading ? "Yükleniyor..." : (isLogin ? "Giriş Yap" : "Kayıt Ol")}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] active:scale-95 disabled:opacity-50 mt-4"
+          >
+            {isLoading ? "SİNERJİ BAĞLANIYOR..." : "SİSTEME GİR"}
           </button>
         </form>
-        <div className="mt-8 text-center text-sm text-gray-400">
-          {isLogin ? "Henüz hesabın yok mu?" : "Zaten bir hesabın var mı?"}
-          <button type="button" onClick={() => setIsLogin(!isLogin)} className="ml-2 text-blue-400 hover:text-blue-300 font-medium transition-colors">
-            {isLogin ? "Hemen Kayıt Ol" : "Giriş Yap"}
-          </button>
+
+        <div className="mt-8 text-center border-t border-gray-800 pt-6">
+          <p className="text-gray-500 text-xs font-medium">
+            Henüz kabileye katılmadın mı?{" "}
+            <Link href="/register" className="text-blue-400 font-bold hover:text-blue-300 transition-colors underline decoration-blue-500/30 underline-offset-4">
+              Hesap Oluştur
+            </Link>
+          </p>
         </div>
       </div>
     </div>
