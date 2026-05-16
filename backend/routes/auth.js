@@ -3,66 +3,91 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const User = require('../models/User');
 
-// --- KAYIT OL (REGISTER) ---
+// --- 1. KULLANICI KAYDI (REGISTER) ---
 router.post('/register', async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, interests } = req.body;
+
     const existingUser = await User.findOne({ email });
-    if (existingUser) return res.status(400).json({ message: "Bu e-posta kabilede zaten kullanımda!" });
+    if (existingUser) {
+      return res.status(400).json({ message: "Bu e-posta zaten kullanımda dostum." });
+    }
+
+    const existingUsername = await User.findOne({ username });
+    if (existingUsername) {
+      return res.status(400).json({ message: "Bu kullanıcı adı daha önce alınmış." });
+    }
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    const newUser = new User({ username, email, password: hashedPassword });
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      interests: interests || []
+    });
+
     const savedUser = await newUser.save();
-    res.status(201).json({ message: "Hoş geldin!", userId: savedUser._id });
+    res.status(201).json(savedUser);
   } catch (err) {
-    res.status(500).json({ message: "Sunucu hatası.", error: err.message });
+    res.status(500).json({ message: "Kayıt olurken bir hata oluştu.", error: err.message });
   }
 });
 
-// --- GİRİŞ YAP (LOGIN) ---
+// --- 2. KULLANICI GİRİŞİ (LOGIN) ---
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "Kullanıcı bulunamadı." });
+    if (!user) {
+      return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+    }
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Şifre yanlış." });
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(400).json({ message: "Hatalı şifre girdin dostum." });
+    }
 
-    res.status(200).json({ message: "Giriş başarılı", userId: user._id });
+    res.status(200).json(user);
   } catch (err) {
-    res.status(500).json({ message: "Sunucu hatası.", error: err.message });
+    res.status(500).json({ message: "Giriş yapılırken bir hata oluştu.", error: err.message });
   }
 });
 
-// --- PROFİL GÜNCELLE (ONBOARDING VERİLERİ) ---
-router.put('/update-profile', async (req, res) => {
-  try {
-    const { userId, roles, interests } = req.body;
-    const updatedUser = await User.findByIdAndUpdate(
-      userId, 
-      { roles, interests }, 
-      { new: true }
-    );
-    res.status(200).json({ message: "Profil başarıyla güncellendi!", user: updatedUser });
-  } catch (err) {
-    res.status(500).json({ message: "Profil güncellenirken hata oluştu.", error: err.message });
-  }
-});
-
-// --- YENİ: KULLANICI BİLGİLERİNİ GETİR (DASHBOARD İÇİN) ---
+// --- 3. KULLANICI BİLGİSİ GETİRME ---
 router.get('/user/:id', async (req, res) => {
   try {
-    // Güvenlik: .select('-password') diyerek şifreyi frontend'e asla göndermiyoruz
+    // Şifreyi hariç tutarak tüm verileri getir
     const user = await User.findById(req.params.id).select('-password');
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
     res.status(200).json(user);
   } catch (err) {
-    res.status(500).json({ message: "Kullanıcı bilgileri alınırken hata.", error: err.message });
+    res.status(500).json({ message: "Kullanıcı bilgisi alınamadı.", error: err.message });
+  }
+});
+
+// --- 4. YENİ: PROFİL FOTOĞRAFI GÜNCELLEME ---
+router.put('/update-avatar/:id', async (req, res) => {
+  try {
+    const { profilePicture } = req.body; // Base64 formatındaki fotoğraf verisi
+    
+    if (!profilePicture) {
+      return res.status(400).json({ message: "Fotoğraf verisi boş olamaz." });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { profilePicture: profilePicture } },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({ message: "Profil fotoğrafı başarıyla güncellendi!", user: updatedUser });
+  } catch (err) {
+    res.status(500).json({ message: "Fotoğraf yüklenemedi.", error: err.message });
   }
 });
 

@@ -28,14 +28,17 @@ const UserSchema = new mongoose.Schema({
     type: Number,
     default: 10
   },
-  // Kullanıcının katıldığı kabilelerin ID listesi
+  // YENİ: Profil Fotoğrafı (Base64 formatında metin olarak tutulacak)
+  profilePicture: {
+    type: String,
+    default: ""
+  },
   hubs: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Hub'
     }
   ],
-  // YENİ: Arkadaşlık Sistemi Alanları (Kısaltılmamış tam hali)
   friends: [
     {
       type: mongoose.Schema.Types.ObjectId,
@@ -47,13 +50,13 @@ const UserSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     }
-  ], // Kullanıcıya gelen istekler
+  ],
   sentRequests: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     }
-  ], // Kullanıcının gönderdiği istekler
+  ],
   createdAt: {
     type: Date,
     default: Date.now,

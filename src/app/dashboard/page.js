@@ -2,11 +2,14 @@
 import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { io } from "socket.io-client";
 
 export default function DashboardPage() {
   const router = useRouter();
   const messagesEndRef = useRef(null);
   
+  const socket = useRef();
+
   // --- TEMEL DURUMLAR (STATES) ---
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,8 +32,11 @@ export default function DashboardPage() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [dmMessages, setDmMessages] = useState([]);
   const [newDm, setNewDm] = useState("");
+  const [arrivalMessage, setArrivalMessage] = useState(null);
 
-  // Mesajlar gelince en alta kaydırma motoru
+  // --- YENİ: ARAMA MOTORU DURUMU ---
+  const [searchQuery, setSearchQuery] = useState("");
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -39,37 +45,51 @@ export default function DashboardPage() {
     if (isDmOpen) scrollToBottom();
   }, [dmMessages]);
 
-  // --- VERİ ÇEKME MOTORU ---
+  useEffect(() => {
+    socket.current = io("https://sinerjihub-1.onrender.com");
+
+    socket.current.on("getDm", (data) => {
+      setArrivalMessage({
+        sender: data.sender,
+        content: data.content,
+        createdAt: Date.now(),
+      });
+    });
+
+    return () => {
+      socket.current.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (arrivalMessage && selectedUser && arrivalMessage.sender === selectedUser._id) {
+      setDmMessages((prev) => [...prev, arrivalMessage]);
+    }
+  }, [arrivalMessage, selectedUser]);
+
   useEffect(() => {
     const fetchData = async () => {
       const userId = localStorage.getItem("userId");
       if (!userId) { router.push("/login"); return; }
 
       try {
-        // 1. Kullanıcı Verisi
+        socket.current.emit("newUser", userId);
+
         const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
         const userData = await userRes.json();
         if (userRes.ok) { setUser(userData); } else { router.push("/login"); return; }
 
-        // 2. Tüm İlanlar
         const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
-        const postsData = await postsRes.json();
-        setPosts(postsData);
+        setPosts(await postsRes.json());
 
-        // 3. Tüm Kabileler
         const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
-        const hubsData = await hubsRes.json();
-        setHubs(hubsData);
+        setHubs(await hubsRes.json());
 
-        // 4. Bildirimler
         const notifRes = await fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`);
-        const notifData = await notifRes.json();
-        setNotifications(notifData);
+        setNotifications(await notifRes.json());
 
-        // 5. Arkadaşlık İstekleri
         const friendRes = await fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`);
-        const friendData = await friendRes.json();
-        setFriendRequests(friendData);
+        setFriendRequests(await friendRes.json());
 
       } catch (error) { 
         console.error("Veri yüklenirken hata oluştu:", error); 
@@ -80,7 +100,6 @@ export default function DashboardPage() {
     fetchData();
   }, [router]);
 
-  // --- ARKADAŞLIK FONKSİYONLARI ---
   const handleSendFriendRequest = async (targetId) => {
     const userId = localStorage.getItem("userId");
     try {
@@ -97,14 +116,12 @@ export default function DashboardPage() {
       if (res.ok) {
         alert("Artık arkadaşsınız! ✨");
         setFriendRequests(friendRequests.filter(req => req._id !== friendId));
-        // Kullanıcı verisini güncelle
         const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
         setUser(updatedUser);
       }
     } catch (err) { alert("İstek kabul edilemedi."); }
   };
 
-  // --- DM (MESAJLAŞMA) FONKSİYONLARI ---
   const openChat = async (targetId, targetUsername) => {
     const userId = localStorage.getItem("userId");
     setSelectedUser({ _id: targetId, username: targetUsername });
@@ -120,6 +137,13 @@ export default function DashboardPage() {
     e.preventDefault();
     if (!newDm.trim()) return;
     const userId = localStorage.getItem("userId");
+    
+    socket.current.emit("sendDm", {
+      senderId: userId,
+      receiverId: selectedUser._id,
+      content: newDm,
+    });
+
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/messages/send", {
         method: "POST",
@@ -128,13 +152,12 @@ export default function DashboardPage() {
       });
       if (res.ok) {
         const savedMsg = await res.json();
-        setDmMessages([...dmMessages, savedMsg]);
+        setDmMessages((prev) => [...prev, savedMsg]);
         setNewDm("");
       }
     } catch (err) { alert("Mesaj gönderilemedi."); }
   };
 
-  // --- İLAN VE UPVOTE FONKSİYONLARI ---
   const handleCreatePost = async (e) => {
     e.preventDefault();
     setIsPosting(true);
@@ -188,6 +211,19 @@ export default function DashboardPage() {
     return new Date(dateString).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  // --- YENİ: ARAMA FİLTRELEME MANTIĞI ---
+  const filteredHubs = hubs.filter(hub => 
+    hub.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    hub.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    hub.description.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredPosts = posts.filter(post => 
+    post.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    post.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (post.tags && post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
+  );
+
   if (isLoading) return (
     <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
       <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -198,17 +234,19 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-900 text-white flex relative overflow-hidden font-sans">
       
-      {/* --- DM PENCERESİ (YÜZEN PANEL) --- */}
+      {/* --- DM PENCERESİ --- */}
       {isDmOpen && (
         <div className="fixed bottom-0 right-6 w-80 bg-gray-800 border border-gray-700 rounded-t-2xl shadow-2xl z-[60] flex flex-col h-[400px] animate-in slide-in-from-bottom duration-300">
           <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-blue-600 rounded-t-2xl">
-            <span className="font-bold text-xs uppercase tracking-widest">💬 {selectedUser?.username}</span>
-            <button onClick={() => setIsDmOpen(false)} className="text-white text-xl">×</button>
+            <span className="font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span> 💬 {selectedUser?.username}
+            </span>
+            <button onClick={() => setIsDmOpen(false)} className="text-white text-xl hover:text-gray-200 transition-colors">×</button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900/40">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900/40 custom-scrollbar">
             {dmMessages.map((msg, i) => (
               <div key={i} className={`flex ${msg.sender === user?._id ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed ${msg.sender === user?._id ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-700 text-gray-200 rounded-tl-none"}`}>
+                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed shadow-md ${msg.sender === user?._id ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-700 text-gray-200 rounded-tl-none border border-gray-600/50"}`}>
                   {msg.content}
                 </div>
               </div>
@@ -221,7 +259,8 @@ export default function DashboardPage() {
               value={newDm} 
               onChange={(e) => setNewDm(e.target.value)}
               placeholder="Mesaj yaz..."
-              className="w-full bg-gray-900 border border-gray-700 rounded-full px-4 py-2 text-xs outline-none focus:border-blue-500 transition-all"
+              className="w-full bg-gray-900 border border-gray-700 rounded-full px-4 py-2 text-xs outline-none focus:border-blue-500 transition-all shadow-inner"
+              autoComplete="off"
             />
           </form>
         </div>
@@ -230,26 +269,26 @@ export default function DashboardPage() {
       {/* --- BİLDİRİM VE İSTEK AKIŞI --- */}
       {isNotifOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-end">
-          <div className="w-80 bg-gray-800 h-full p-6 border-l border-gray-700 overflow-y-auto animate-in slide-in-from-right duration-300">
+          <div className="w-80 bg-gray-800 h-full p-6 border-l border-gray-700 overflow-y-auto animate-in slide-in-from-right duration-300 custom-scrollbar">
             <div className="flex justify-between items-center mb-8">
               <h3 className="font-black text-lg tracking-tighter italic">SİNERJİ AKIŞI</h3>
-              <button onClick={() => setIsNotifOpen(false)} className="text-2xl text-gray-500 hover:text-white">&times;</button>
+              <button onClick={() => setIsNotifOpen(false)} className="text-2xl text-gray-500 hover:text-white transition-colors">&times;</button>
             </div>
             
             <div className="mb-8">
               <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-4">Yeni İstekler</h4>
-              {friendRequests.length === 0 ? <p className="text-gray-600 text-[10px]">Bekleyen istek yok.</p> : friendRequests.map(req => (
-                <div key={req._id} className="bg-gray-900/50 p-4 rounded-2xl border border-gray-700 mb-3 group">
+              {friendRequests.length === 0 ? <p className="text-gray-600 text-[10px] font-medium">Bekleyen istek yok.</p> : friendRequests.map(req => (
+                <div key={req._id} className="bg-gray-900/50 p-4 rounded-2xl border border-gray-700 mb-3 group transition-all hover:border-gray-500">
                   <p className="text-[11px] font-bold mb-3">{req.username.toUpperCase()} Seninle bağ kurmak istiyor.</p>
-                  <button onClick={() => handleAcceptFriend(req._id)} className="w-full bg-blue-600 text-[10px] font-black py-2 rounded-lg hover:bg-blue-500 transition-all">KABUL ET</button>
+                  <button onClick={() => handleAcceptFriend(req._id)} className="w-full bg-blue-600 text-[10px] font-black py-2 rounded-lg hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/20">KABUL ET</button>
                 </div>
               ))}
             </div>
 
             <div>
               <h4 className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] mb-4">Son Etkinlikler</h4>
-              {notifications.length === 0 ? <p className="text-gray-600 text-[10px]">Henüz bildirim yok.</p> : notifications.map(n => (
-                <div key={n._id} className="bg-gray-800 border border-gray-700 p-3 rounded-xl mb-2 text-[10px] text-gray-400 leading-relaxed">
+              {notifications.length === 0 ? <p className="text-gray-600 text-[10px] font-medium">Henüz bildirim yok.</p> : notifications.map(n => (
+                <div key={n._id} className="bg-gray-800 border border-gray-700 p-3 rounded-xl mb-2 text-[10px] text-gray-400 leading-relaxed font-medium">
                   {n.message}
                 </div>
               ))}
@@ -265,16 +304,16 @@ export default function DashboardPage() {
             <h3 className="text-2xl font-black mb-6 tracking-tight">Yeni Kabile Çağrısı 🚀</h3>
             <form onSubmit={handleCreatePost} className="space-y-4">
               <textarea value={postContent} onChange={(e) => setPostContent(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm outline-none focus:border-blue-500 h-32 resize-none transition-all" placeholder="Ne arıyorsun? Bir çalışma ortağı mı yoksa bir cevap mı?" required />
-              <input type="text" value={postTags} onChange={(e) => setPostTags(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm outline-none focus:border-blue-500 transition-all" placeholder="Etiketler (örneğin: Kimya, YBS, React)" />
+              <input type="text" value={postTags} onChange={(e) => setPostTags(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm outline-none focus:border-blue-500 transition-all" placeholder="Etiketler (örneğin: Kimya, Yazılım, YKS)" />
               <button disabled={isPosting} className="w-full bg-blue-600 py-4 rounded-2xl font-black text-sm hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/20">{isPosting ? "GÖNDERİLİYOR..." : "YAYINLA"}</button>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="w-full text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-2">Vazgeç</button>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="w-full text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-2 hover:text-gray-300 transition-colors">Vazgeç</button>
             </form>
           </div>
         </div>
       )}
 
       {/* --- SOL PANEL (SIDEBAR) --- */}
-      <aside className="w-72 bg-gray-800/40 border-r border-gray-700/50 hidden md:flex flex-col p-8 backdrop-blur-2xl h-screen sticky top-0">
+      <aside className="w-72 bg-gray-800/40 border-r border-gray-700/50 hidden md:flex flex-col p-8 backdrop-blur-2xl h-screen sticky top-0 z-10">
         <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 mb-12 tracking-tighter">SINERJIHUB</h1>
         <nav className="flex-1 space-y-2">
           <Link href="/dashboard" className="flex items-center gap-4 bg-blue-600/10 px-5 py-4 rounded-2xl border border-blue-500/20 group">
@@ -305,7 +344,7 @@ export default function DashboardPage() {
 
       {/* --- ANA AKIŞ --- */}
       <main className="flex-1 p-6 md:p-12 overflow-y-auto">
-        <header className="flex justify-between items-start mb-16">
+        <header className="flex justify-between items-start mb-8">
           <div>
             <h2 className="text-4xl font-black tracking-tighter mb-2 italic">HOŞ GELDİN, {user?.username.toUpperCase()}! 👋</h2>
             <p className="text-gray-500 font-medium text-sm">Ekosistem bugün senin için neler hazırladı?</p>
@@ -313,64 +352,117 @@ export default function DashboardPage() {
           <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 px-8 py-3.5 rounded-2xl font-black text-xs tracking-widest shadow-xl shadow-blue-900/20 hover:-translate-y-1 transition-all active:scale-95 uppercase">Yeni İlan</button>
         </header>
 
+        {/* --- YENİ: ARAMA MOTORU --- */}
+        <div className="mb-12">
+          <div className="relative max-w-3xl">
+            <span className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500 text-xl">🔍</span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Kabile, ilan veya etiket ara... (Örn: Kimya, LGS, Yazılım)"
+              className="w-full bg-gray-800/40 border border-gray-700/50 rounded-full pl-14 pr-12 py-5 text-sm text-white outline-none focus:border-blue-500/50 focus:bg-gray-800/80 transition-all shadow-inner backdrop-blur-sm"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-6 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white transition-colors text-lg">✖</button>
+            )}
+          </div>
+          <div className="flex gap-2 mt-4 overflow-x-auto custom-scrollbar pb-2 max-w-3xl">
+            {["#Yazılım", "#Kimya", "#LGS", "#YKS", "#Girişim", "#Matematik"].map(tag => (
+              <button 
+                key={tag} 
+                onClick={() => setSearchQuery(tag.replace("#", ""))} 
+                className="bg-gray-800/40 border border-gray-700/50 hover:bg-gray-700 hover:border-gray-500 hover:text-blue-400 px-5 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest text-gray-400 transition-all whitespace-nowrap"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
           
           {/* Kabile Keşfi Bölümü */}
           <div className="xl:col-span-2 space-y-8">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black tracking-tight italic">KABİLE KEŞFİ</h3>
+              <h3 className="text-xl font-black tracking-tight italic">KABİLE KEŞFİ {searchQuery && <span className="text-blue-400 text-sm ml-2">({filteredHubs.length} sonuç)</span>}</h3>
               <span className="h-[1px] flex-1 bg-gray-800 mx-6"></span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {hubs.map(hub => (
-                <div key={hub._id} className="bg-gray-800/30 border border-gray-700/50 p-7 rounded-[2.5rem] hover:border-gray-500 transition-all group relative overflow-hidden">
-                  <div className="absolute -right-4 -top-4 text-8xl opacity-[0.03] group-hover:opacity-[0.07] transition-opacity">{hub.icon}</div>
-                  <div className="flex justify-between mb-6 relative z-10">
-                    <span className="text-5xl group-hover:scale-110 transition-transform duration-500">{hub.icon}</span>
-                    <span className="text-[9px] font-black bg-gray-700/50 px-3 py-1.5 rounded-full text-gray-400 uppercase tracking-widest border border-gray-700/20">{hub.category}</span>
+            
+            {filteredHubs.length === 0 ? (
+               <div className="bg-gray-800/20 border border-dashed border-gray-700 p-8 rounded-[2rem] text-center text-gray-500 font-medium text-sm">
+                 Aradığın kritere uygun kabile bulunamadı.
+               </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredHubs.map(hub => (
+                  <div key={hub._id} className="bg-gray-800/30 border border-gray-700/50 p-7 rounded-[2.5rem] hover:border-gray-500 transition-all group relative overflow-hidden">
+                    <div className="absolute -right-4 -top-4 text-8xl opacity-[0.03] group-hover:opacity-[0.07] transition-opacity">{hub.icon}</div>
+                    <div className="flex justify-between mb-6 relative z-10">
+                      <span className="text-5xl group-hover:scale-110 transition-transform duration-500">{hub.icon}</span>
+                      <span className="text-[9px] font-black bg-gray-700/50 px-3 py-1.5 rounded-full text-gray-400 uppercase tracking-widest border border-gray-700/20">{hub.category}</span>
+                    </div>
+                    <h4 className="font-bold text-lg mb-2">{hub.name}</h4>
+                    <p className="text-xs text-gray-500 leading-relaxed mb-6 line-clamp-2">{hub.description}</p>
+                    <div className="mt-auto flex justify-between items-center relative z-10 pt-4 border-t border-gray-700/30">
+                      <span className="text-[10px] text-gray-600 font-bold uppercase">{hub.members?.length} Kabile Üyesi</span>
+                      {user?.hubs?.includes(hub._id) ? (
+                        <Link href={`/hubs/${hub._id}`} className="bg-green-500/10 text-green-400 px-5 py-2.5 rounded-xl text-[9px] font-black border border-green-500/20 hover:bg-green-500/20 transition-all uppercase tracking-widest">Odaya Gir</Link>
+                      ) : (
+                        <button onClick={() => handleJoinHub(hub._id)} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-blue-900/10 transition-all hover:bg-blue-500">Katıl</button>
+                      )}
+                    </div>
                   </div>
-                  <h4 className="font-bold text-lg mb-2">{hub.name}</h4>
-                  <p className="text-xs text-gray-500 leading-relaxed mb-6 line-clamp-2">{hub.description}</p>
-                  <div className="mt-auto flex justify-between items-center relative z-10 pt-4 border-t border-gray-700/30">
-                    <span className="text-[10px] text-gray-600 font-bold uppercase">{hub.members?.length} Kabile Üyesi</span>
-                    {user?.hubs?.includes(hub._id) ? (
-                      <Link href={`/hubs/${hub._id}`} className="bg-green-500/10 text-green-400 px-5 py-2.5 rounded-xl text-[9px] font-black border border-green-500/20 hover:bg-green-500/20 transition-all uppercase tracking-widest">Odaya Gir</Link>
-                    ) : (
-                      <button onClick={() => handleJoinHub(hub._id)} className="bg-blue-600 px-6 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest shadow-lg shadow-blue-900/10 transition-all hover:bg-blue-500">Katıl</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* İlanlar Bölümü */}
           <div className="space-y-8">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-black tracking-tight italic">SON SİNERJİ</h3>
+              <h3 className="text-xl font-black tracking-tight italic">SON SİNERJİ {searchQuery && <span className="text-blue-400 text-sm ml-2">({filteredPosts.length} sonuç)</span>}</h3>
               <span className="h-[1px] flex-1 bg-gray-800 ml-6"></span>
             </div>
+            
             <div className="space-y-6">
-              {posts.map(post => (
-                <div key={post._id} className="bg-gray-800/30 border border-gray-700 p-6 rounded-[2rem] flex flex-col group hover:bg-gray-800/50 transition-all">
-                  <div className="flex justify-between items-center mb-4">
-                    <span className="text-blue-400 font-black text-[11px] uppercase tracking-tighter">@{post.username}</span>
-                    <span className="text-[9px] text-gray-600 font-bold uppercase">{formatDate(post.createdAt)}</span>
-                  </div>
-                  <p className="text-sm text-gray-300 mb-6 leading-relaxed font-medium">{post.content}</p>
-                  <div className="flex gap-2 mt-auto pt-5 border-t border-gray-700/30">
-                    <button onClick={() => handleUpvote(post._id)} className="flex-1 bg-gray-700/20 py-3 rounded-2xl text-[10px] font-black hover:bg-blue-600/20 hover:text-blue-400 border border-transparent hover:border-blue-500/30 transition-all">🙌 {post.upvotes?.length || 0}</button>
-                    {post.user !== user?._id && (
-                      <>
-                        <button onClick={() => openChat(post.user, post.username)} className="bg-gray-700/20 px-4 py-3 rounded-2xl text-[10px] border border-transparent hover:border-gray-600 transition-all">💬</button>
-                        {!user?.friends?.includes(post.user) && (
-                          <button onClick={() => handleSendFriendRequest(post.user)} className="bg-gray-700/20 px-4 py-3 rounded-2xl text-[10px] border border-transparent hover:border-blue-600/50 transition-all text-blue-500">➕</button>
-                        )}
-                      </>
-                    )}
-                  </div>
+              {filteredPosts.length === 0 ? (
+                <div className="bg-gray-800/20 border border-dashed border-gray-700 p-8 rounded-[2rem] text-center text-gray-500 font-medium text-sm">
+                  Aradığın kritere uygun ilan bulunamadı.
                 </div>
-              ))}
+              ) : (
+                filteredPosts.map(post => (
+                  <div key={post._id} className="bg-gray-800/30 border border-gray-700 p-6 rounded-[2rem] flex flex-col group hover:bg-gray-800/50 transition-all">
+                    <div className="flex justify-between items-center mb-4">
+                      <span className="text-blue-400 font-black text-[11px] uppercase tracking-tighter">@{post.username}</span>
+                      <span className="text-[9px] text-gray-600 font-bold uppercase">{formatDate(post.createdAt)}</span>
+                    </div>
+                    <p className="text-sm text-gray-300 mb-6 leading-relaxed font-medium">{post.content}</p>
+                    
+                    {post.tags && post.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-5">
+                        {post.tags.map((tag, idx) => (
+                          <span key={idx} className="text-[9px] font-black uppercase tracking-widest bg-gray-900 text-gray-400 border border-gray-700 px-2.5 py-1 rounded-md">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 mt-auto pt-5 border-t border-gray-700/30">
+                      <button onClick={() => handleUpvote(post._id)} className="flex-1 bg-gray-700/20 py-3 rounded-2xl text-[10px] font-black hover:bg-blue-600/20 hover:text-blue-400 border border-transparent hover:border-blue-500/30 transition-all">🙌 {post.upvotes?.length || 0}</button>
+                      {post.user !== user?._id && (
+                        <>
+                          <button onClick={() => openChat(post.user, post.username)} className="bg-gray-700/20 px-4 py-3 rounded-2xl text-[10px] border border-transparent hover:border-gray-600 transition-all text-gray-400 hover:text-white">💬</button>
+                          {!user?.friends?.includes(post.user) && (
+                            <button onClick={() => handleSendFriendRequest(post.user)} className="bg-gray-700/20 px-4 py-3 rounded-2xl text-[10px] border border-transparent hover:border-blue-600/50 transition-all text-blue-500">➕</button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

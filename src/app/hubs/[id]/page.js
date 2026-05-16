@@ -2,11 +2,13 @@
 import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { io } from "socket.io-client"; // YENİ: Canlı oda bağlantısı için istemci
 
 export default function HubDetailPage() {
   const { id: hubId } = useParams();
   const router = useRouter();
 
+  // --- TEMEL DURUMLAR (STATES) ---
   const [hub, setHub] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
@@ -14,12 +16,35 @@ export default function HubDetailPage() {
   const [isSending, setIsSending] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
+  // --- REFERANSLAR (REFS) ---
   const messagesEndRef = useRef(null);
+  const socket = useRef(); // YENİ: Canlı bağlantı referansı
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // --- YENİ: SOCKET.IO BAĞLANTISI VE ODA DİNLEME ---
+  useEffect(() => {
+    // Canlı bağlantı sunucusunu ayağa kaldırıyoruz
+    socket.current = io("https://sinerjihub-1.onrender.com");
+
+    // Kabile odasından yeni bir mesaj gelirse yakala ve akışa ekle
+    socket.current.on("getHubMessage", (data) => {
+      setMessages((prev) => [...prev, data]);
+    });
+
+    return () => {
+      // Sayfadan çıkıldığında canlı tüneli kapat
+      socket.current.disconnect();
+    };
+  }, []);
+
+  // --- VERİ ÇEKME MOTORU VE ODAYA GİRİŞ SİNYALİ ---
   useEffect(() => {
     const fetchHubData = async () => {
       const userId = localStorage.getItem("userId");
@@ -36,12 +61,15 @@ export default function HubDetailPage() {
           const userData = await userRes.json();
           setCurrentUser(userData);
 
-          // Güvenlik: Kullanıcı bu kabileye üye mi?
+          // Güvenlik: Kullanıcı bu kabileye gerçekten üye mi?
           if (!userData.hubs.includes(hubId)) {
             alert("Bu çalışma odasına girmek için kabileye katılmalısın dostum!");
             router.push("/dashboard");
             return;
           }
+
+          // YENİ: Kullanıcı doğrulandıktan sonra Socket'e "Ben bu kabile odasına girdim" sinyali yolla
+          socket.current.emit("joinHubRoom", hubId);
         } else {
           router.push("/login");
           return;
@@ -54,7 +82,7 @@ export default function HubDetailPage() {
           setHub(hubData);
         }
 
-        // 3. Kabile Mesajlarını Çek
+        // 3. Geçmiş Kabile Mesajlarını Çek
         const messagesRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}/messages`);
         if (messagesRes.ok) {
           const messagesData = await messagesRes.json();
@@ -71,10 +99,7 @@ export default function HubDetailPage() {
     fetchHubData();
   }, [hubId, router]);
 
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
+  // --- KABİLE ODASINA MESAJ GÖNDERME FONKSİYONU ---
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
@@ -82,7 +107,16 @@ export default function HubDetailPage() {
     setIsSending(true);
     const userId = localStorage.getItem("userId");
 
+    // YENİ: 1. Mesajı veritabanına yazılmasını beklemeden odaya bağlı diğer üyelere anlık fırlat
+    socket.current.emit("sendHubMessage", {
+      hubId: hubId,
+      senderId: userId,
+      username: currentUser?.username || "Gezgin",
+      content: newMessage
+    });
+
     try {
+      // 2. Mesajı kalıcı hafızaya (Veritabanına) kaydet
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}/messages/create`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -91,26 +125,27 @@ export default function HubDetailPage() {
 
       if (res.ok) {
         const savedMessage = await res.json();
-        setMessages([...messages, savedMessage]);
+        // Kendi ekranımıza da ekleyelim
+        setMessages((prev) => [...prev, savedMessage]);
         setNewMessage("");
       } else {
-        alert("Mesaj gönderilemedi.");
+        alert("Mesaj sunucuya kaydedilemedi.");
       }
     } catch (err) {
-      alert("Sunucuya bağlanılamadı.");
+      alert("Sunucuyla bağlantı hatası oluştu.");
     }
     setIsSending(false);
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleTimeString('tr-TR', { hour: '2-digit', minute:'2-digit' });
+  const formatTime = (dateString) => {
+    return new Date(dateString).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
   };
 
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
         <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-400 font-bold tracking-widest uppercase text-[10px]">Odaya Bağlanılıyor...</p>
+        <p className="text-gray-400 font-bold tracking-widest uppercase text-[10px]">Kabile Bağlantısı Kuruluyor...</p>
       </div>
     );
   }
@@ -118,7 +153,7 @@ export default function HubDetailPage() {
   return (
     <div className="min-h-screen bg-gray-900 text-white flex flex-col md:flex-row font-sans selection:bg-indigo-500/30 overflow-hidden">
       
-      {/* SOL KOLON: KABİLE DETAYLARI VE ÜYELER */}
+      {/* SOL PANEL: KABİLE DETAYLARI VE ÜYELER */}
       <aside className="w-full md:w-80 bg-gray-800/40 border-r border-gray-700/50 flex flex-col p-6 backdrop-blur-2xl md:h-screen md:sticky md:top-0 z-20">
         
         <Link href="/dashboard" className="text-gray-500 hover:text-white transition-all mb-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest group">
@@ -139,7 +174,7 @@ export default function HubDetailPage() {
 
         <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
           <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4 flex justify-between items-center">
-            Ağdaki Üyeler
+            Kabiledeki Üyeler
             <span className="bg-gray-800 border border-gray-700 text-gray-400 px-2 py-1 rounded-md text-[9px]">{hub?.members?.length || 0}</span>
           </h3>
           <div className="space-y-2">
@@ -163,7 +198,7 @@ export default function HubDetailPage() {
         </div>
       </aside>
 
-      {/* SAĞ KOLON: SOHBET ODASI */}
+      {/* SAĞ PANEL: CANLI SOHBET ODASI */}
       <main className="flex-1 flex flex-col h-[calc(100vh-80px)] md:h-screen relative bg-[#0a0f1c]">
         
         {/* SOHBET ÜST BARI */}
@@ -171,33 +206,34 @@ export default function HubDetailPage() {
           <div>
             <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-              Çalışma Odası
+              Çalışma Odası Kanalları
             </h2>
-            <p className="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-widest">Sadece kabile üyeleri görebilir</p>
+            <p className="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-widest">Ağ üzerinden şifreli ve anlık iletişim</p>
           </div>
           <div className="hidden md:flex -space-x-2">
-            {hub?.members?.slice(0,3).map((m,i) => (
+            {hub?.members?.slice(0, 3).map((m, i) => (
               <div key={i} className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-[10px] font-bold text-gray-400 z-10">{m.username[0].toUpperCase()}</div>
             ))}
-            {hub?.members?.length > 3 && <div className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-[10px] font-bold text-gray-400 z-0">+{hub.members.length - 3}</div>}
+            {hub?.members?.length > 3 && (
+              <div className="w-8 h-8 rounded-full bg-gray-800 border-2 border-gray-900 flex items-center justify-center text-[10px] font-bold text-gray-400 z-0">+{hub.members.length - 3}</div>
+            )}
           </div>
         </header>
 
-        {/* MESAJ AKIŞI */}
+        {/* MESAJ AKIŞ ALANI */}
         <div className="flex-1 p-4 md:p-8 overflow-y-auto space-y-6 custom-scrollbar bg-grid-slate-900/[0.04]">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
               <span className="text-6xl opacity-20 drop-shadow-2xl">{hub?.icon}</span>
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-600">Bu kabilede sessizlik hakim. Sinerjiyi başlat!</p>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-600">Bu odada henüz sinerji parlamadı. İlk mesajı sen gönder!</p>
             </div>
           ) : (
             messages.map((msg, index) => {
               const isMe = msg.user === currentUser?._id;
-              // Önceki mesajla aynı kişiyse ismi tekrar yazmamak için basit kontrol
               const showName = index === 0 || messages[index - 1].user !== msg.user;
               
               return (
-                <div key={msg._id} className={`flex flex-col max-w-[85%] md:max-w-[70%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}>
+                <div key={msg._id || index} className={`flex flex-col max-w-[85%] md:max-w-[70%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}>
                   {!isMe && showName && (
                     <span className="text-[10px] text-gray-500 mb-1 ml-2 font-bold tracking-widest uppercase">{msg.username}</span>
                   )}
@@ -208,7 +244,7 @@ export default function HubDetailPage() {
                   }`}>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{msg.content}</p>
                   </div>
-                  <span className={`text-[9px] text-gray-600 mt-1.5 font-bold ${isMe ? "mr-1" : "ml-1"}`}>{formatDate(msg.createdAt)}</span>
+                  <span className={`text-[9px] text-gray-600 mt-1.5 font-bold ${isMe ? "mr-1" : "ml-1"}`}>{formatTime(msg.createdAt)}</span>
                 </div>
               );
             })
@@ -216,14 +252,14 @@ export default function HubDetailPage() {
           <div ref={messagesEndRef} className="h-1" />
         </div>
 
-        {/* MESAJ GÖNDERME KUTUSU */}
+        {/* GEVEZE GİRİŞ PANELİ */}
         <div className="p-4 md:p-6 border-t border-gray-800/80 bg-gray-900/90 backdrop-blur-xl">
           <form onSubmit={handleSendMessage} className="flex gap-3 max-w-5xl mx-auto relative">
             <input
               type="text"
               value={newMessage}
               onChange={(e) => setNewMessage(e.target.value)}
-              placeholder={`${hub?.name} kabilesine mesaj gönder...`}
+              placeholder={`${hub?.name || 'Kabile'} odasına fikir fırlat...`}
               className="flex-1 bg-gray-800/50 border border-gray-700/50 rounded-full pl-6 pr-32 py-4 text-sm text-white outline-none focus:border-indigo-500/50 focus:bg-gray-800 transition-all shadow-inner"
               autoComplete="off"
             />
@@ -232,7 +268,7 @@ export default function HubDetailPage() {
               disabled={isSending || !newMessage.trim()}
               className="absolute right-2 top-2 bottom-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full px-6 font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(79,70,229,0.3)]"
             >
-              {isSending ? "..." : "Gönder"}
+              {isSending ? "..." : "Fırlat"}
             </button>
           </form>
         </div>
