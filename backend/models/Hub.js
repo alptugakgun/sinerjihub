@@ -1,29 +1,47 @@
 const mongoose = require('mongoose');
 
+// SinerjiHub Kabile (Hub) Şablonu
 const HubSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   category: {
     type: String,
     required: true
   },
-  icon: {
+  description: {
     type: String,
     required: true
   },
-  description: {
-    type: String
+  icon: {
+    type: String,
+    default: "🔥"
   },
-  // Kabileye üye olan kullanıcıların listesi
+  // Kabileye dahil olan tüm gezginlerin ID listesi
   members: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
     }
   ],
+  
+  // --- ÖZEL VE ŞİFRELİ ODA AYARLARI ---
+  isPrivate: {
+    type: Boolean,
+    default: false
+  },
+  passcode: {
+    type: String,
+    default: ""
+  },
+  // Odayı kuran yetkili kullanıcının ID'si (Gelişmiş yönetim için)
+  creator: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+  
   createdAt: {
     type: Date,
     default: Date.now

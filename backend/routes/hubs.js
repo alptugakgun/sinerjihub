@@ -4,25 +4,43 @@ const mongoose = require('mongoose');
 
 // Modülleri çağırıyoruz (Veritabanı Şablonları)
 const User = require('../models/User');
-// Not: Hub ve Message modellerinin backend/models klasöründe var olduğunu varsayıyoruz.
 const Hub = require('../models/Hub'); 
 const Message = require('../models/Message'); 
 
-// --- 1. YENİ KABİLE (HUB) OLUŞTURMA (Tanrı Modu / Admin İçin) ---
+// --- 1. KULLANICI / ADMIN TARAFINDAN KABİLE (HUB) OLUŞTURMA ---
 router.post('/create', async (req, res) => {
   try {
-    const { name, category, description, icon } = req.body;
+    const { name, category, description, icon, isPrivate, passcode, creatorId } = req.body;
     
-    // Gelen verilerle yepyeni bir kabile inşa et
+    // Eğer bir kullanıcı oluşturuyorsa Karma puanını kontrol ediyoruz
+    if (creatorId) {
+      const user = await User.findById(creatorId);
+      if (!user) {
+        return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+      }
+      if (user.karmaPoints < 50) {
+        return res.status(403).json({ message: "Özel kabile kurmak için en az 50 Sinerji Puanına (Ağ Gezgini) ulaşmalısın!" });
+      }
+    }
+
     const newHub = new Hub({
       name,
       category,
       description,
       icon,
-      members: [] // Başlangıçta oda boş
+      isPrivate: isPrivate || false,
+      passcode: passcode || "",
+      creator: creatorId || null,
+      members: creatorId ? [creatorId] : [] // Kurucu otomatik olarak odanın ilk üyesidir
     });
     
     const savedHub = await newHub.save();
+    
+    // Kurucuyu da bu kabileye doğrudan bağlayalım
+    if (creatorId) {
+       await User.findByIdAndUpdate(creatorId, { $push: { hubs: savedHub._id } });
+    }
+
     res.status(201).json(savedHub);
   } catch (err) {
     res.status(500).json({ message: "Kabile oluşturulurken evrende bir hata oluştu.", error: err.message });
@@ -32,7 +50,7 @@ router.post('/create', async (req, res) => {
 // --- 2. TÜM KABİLELERİ GETİR (Dashboard Keşif Bölümü İçin) ---
 router.get('/all', async (req, res) => {
   try {
-    // Kabileleri getirirken üyelerin detaylarını da (isim, profil fotosu, karma) iliştir
+    // Kabileleri getirirken üyelerin detaylarını da (isim, profil fotosu, karma) iliştiriyoruz
     const hubs = await Hub.find().populate('members', 'username profilePicture karmaPoints');
     res.status(200).json(hubs);
   } catch (err) {
@@ -53,10 +71,10 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// --- 4. KABİLEYE KATILMA (Join) ---
+// --- 4. KABİLEYE KATILMA (Şifre Kontrollü Giriş) ---
 router.post('/join', async (req, res) => {
   try {
-    const { userId, hubId } = req.body;
+    const { userId, hubId, enteredPasscode } = req.body;
     
     const hub = await Hub.findById(hubId);
     const user = await User.findById(userId);
@@ -65,13 +83,18 @@ router.post('/join', async (req, res) => {
       return res.status(404).json({ message: "Kullanıcı veya Kabile bulunamadı." });
     }
 
+    // Eğer oda gizliyse ve dışarıdan girilen şifre uyuşmuyorsa içeri alma!
+    if (hub.isPrivate && hub.passcode !== enteredPasscode) {
+      return res.status(401).json({ message: "Hatalı şifre! Bu özel kabileye giriş iznin yok." });
+    }
+
     // Kullanıcı zaten üye değilse kabileye ekle
     if (!hub.members.includes(userId)) {
       hub.members.push(userId);
       await hub.save();
     }
     
-    // Kabileyi de kullanıcının profiline ekle
+    // Kabileyi kullanıcının kendi hub listesine de ekle
     if (!user.hubs.includes(hubId)) {
       user.hubs.push(hubId);
       // Kabileye katılma ödülü olarak 10 Karma Puanı veriyoruz!
@@ -88,7 +111,7 @@ router.post('/join', async (req, res) => {
 // --- 5. KABİLE (ODA) İÇİ MESAJLARI GETİR ---
 router.get('/:id/messages', async (req, res) => {
   try {
-    // Belirli bir hubId'ye sahip tüm mesajları eskinden yeniye sırala
+    // Belirli bir hubId'ye sahip tüm mesajları eskinden yeniye sıralayarak getiriyoruz
     const messages = await Message.find({ hubId: req.params.id }).sort({ createdAt: 1 });
     res.status(200).json(messages);
   } catch (err) {
@@ -101,13 +124,13 @@ router.post('/:id/messages/create', async (req, res) => {
   try {
     const { userId, content } = req.body;
     
-    // Mesajı kimin attığını bulmak için kullanıcıyı çek
+    // Mesajı kimin attığını bulmak için kullanıcıyı çekiyoruz
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-    // Yeni mesaj objesi oluştur (Hem oda ID'si, hem atan kişinin bilgileri)
+    // Yeni mesaj objesi oluşturuluyor
     const newMessage = new Message({
       hubId: req.params.id,
       user: userId,
