@@ -30,7 +30,11 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.json());
+
+// --- DOSYA BOYUT LİMİTİ ARTIRIMI (Kabile Arşivi İçin Hayati Önem Taşır) ---
+// Base64 formatındaki resimlerin ve dosyaların reddedilmemesi için limiti 10MB yapıyoruz
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB Başarıyla Bağlandı!'))
@@ -65,6 +69,13 @@ const getUser = (userId) => {
 io.on("connection", (socket) => {
   console.log(`⚡ Bir kullanıcı canlı ağa bağlandı: ${socket.id}`);
 
+  // --- YENİ: SIFIR BÜTÇE WEBRTC SİNYAL AKTARICISI ---
+  socket.on("join-voice-room", ({ hubId, peerId }) => {
+    // Sinyali o an sadece o Kabile (Hub) odasında olanlara bağırıyoruz
+    socket.broadcast.to(hubId).emit("user-connected-voice", peerId);
+    console.log(`🎙️ Kabile ${hubId} odasında yeni canlı bağlantı: ${peerId}`);
+  });
+  
   // 1. Yeni kullanıcı giriş yaptığında onu listeye ekle
   socket.on("newUser", (userId) => {
     addNewUser(userId, socket.id);
@@ -85,12 +96,15 @@ io.on("connection", (socket) => {
   });
 
   // 3. Kabile (Hub) Odasına Mesaj Gönderildiğinde
-  socket.on("sendHubMessage", ({ hubId, senderId, username, content }) => {
-    // Mesajı o odaya bağlı olan diğer herkese anlık gönder
-    socket.broadcast.to(hubId).emit("getHubMessage", {
-      user: senderId,
-      username: username,
-      content: content,
+  socket.on("sendHubMessage", (data) => {
+    // Mesajı o odaya bağlı olan diğer herkese anlık gönder (Dosya bilgilerini de içerecek şekilde)
+    socket.broadcast.to(data.hubId).emit("getHubMessage", {
+      user: data.senderId,
+      username: data.username,
+      content: data.content,
+      attachment: data.attachment,
+      attachmentName: data.attachmentName,
+      attachmentType: data.attachmentType,
       createdAt: Date.now()
     });
   });

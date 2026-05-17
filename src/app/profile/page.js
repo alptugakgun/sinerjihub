@@ -2,21 +2,23 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Toaster, toast } from "react-hot-toast";
 
 export default function ProfilePage() {
   const router = useRouter();
-  
+
   const [user, setUser] = useState(null);
   const [userPosts, setUserPosts] = useState([]);
+  const [userHubs, setUserHubs] = useState([]);
+  const [userSkills, setUserSkills] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
 
-  // Profil verilerini ve kullanıcının ilanlarını çeken ana motor
+  // --- PROFİL VE PORTFOLYO VERİ MOTORU ---
   useEffect(() => {
     const fetchProfileData = async () => {
       const userId = localStorage.getItem("userId");
-      
-      if (!userId) {
+      if (!userId || userId === "undefined") {
         router.push("/login");
         return;
       }
@@ -33,15 +35,34 @@ export default function ProfilePage() {
           return;
         }
 
-        // 2. Sadece Bu Kullanıcının İlanlarını Çek
-        const postsRes = await fetch(`https://sinerjihub-1.onrender.com/api/posts/user/${userId}`);
+        // 2. Tüm İlanları Çek ve Bu Kullanıcıya Ait Olanları Filtrele
+        const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
         if (postsRes.ok) {
-          const postsData = await postsRes.json();
-          setUserPosts(postsData);
+          const allPosts = await postsRes.json();
+          const myPosts = allPosts.filter(post => post.user === userId);
+          setUserPosts(myPosts);
+
+          // Dinamik Yetenekler (İlanlarındaki etiketleri topluyoruz)
+          const skillsSet = new Set();
+          myPosts.forEach(post => {
+            if (post.tags) {
+              post.tags.forEach(tag => skillsSet.add(tag.toUpperCase()));
+            }
+          });
+          setUserSkills(Array.from(skillsSet));
+        }
+
+        // 3. Tüm Kabileleri (Hubs) Çek ve Kullanıcının Üye Olduklarını Filtrele
+        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
+        if (hubsRes.ok) {
+          const allHubs = await hubsRes.json();
+          const myHubs = allHubs.filter(hub => hub.members.some(member => member._id === userId));
+          setUserHubs(myHubs);
         }
 
       } catch (error) {
         console.error("Profil verisi çekilemedi:", error);
+        toast.error("Profil verileri çekilemedi.", { style: { background: '#7f1d1d', color: '#fff' } });
       } finally {
         setIsLoading(false);
       }
@@ -50,14 +71,14 @@ export default function ProfilePage() {
     fetchProfileData();
   }, [router]);
 
-  // --- YENİ: FOTOĞRAFI GÖRÜP BASE64'E ÇEVİREN VE SUNUCUYA ATAN MOTOR ---
+  // --- FOTOĞRAF GÜNCELLEME MOTORU (BASE64) ---
   const handleImageUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Dosya boyutu kontrolü (Base64 veritabanını yormasın diye 2MB sınırı koyuyoruz)
     if (file.size > 2 * 1024 * 1024) {
-      alert("Fotoğraf boyutu çok büyük dostum! Maksimum 2MB bir görsel seçmelisin.");
+      toast.error("Fotoğraf boyutu çok büyük dostum! Maksimum 2MB.", { style: { background: '#7f1d1d', color: '#fff' } });
+      e.target.value = null;
       return;
     }
 
@@ -65,7 +86,7 @@ export default function ProfilePage() {
     const userId = localStorage.getItem("userId");
 
     const reader = new FileReader();
-    reader.readAsDataURL(file); // Görseli oku ve Base64 string'e dönüştür
+    reader.readAsDataURL(file); 
     reader.onloadend = async () => {
       const base64Image = reader.result;
 
@@ -79,67 +100,81 @@ export default function ProfilePage() {
         const data = await res.json();
 
         if (res.ok) {
-          alert("Profil fotoğrafın başarıyla güncellendi! 🎉");
-          // Arayüzü anında güncellemek için user state'ini yeniliyoruz
+          toast.success("Profil fotoğrafın başarıyla güncellendi! 🎉", { style: { background: '#1f2937', color: '#fff' } });
           setUser({ ...user, profilePicture: base64Image });
         } else {
-          alert(data.message || "Fotoğraf yüklenemedi.");
+          toast.error(data.message || "Fotoğraf yüklenemedi.", { style: { background: '#7f1d1d', color: '#fff' } });
         }
       } catch (err) {
-        alert("Sunucuyla bağlantı hatası oluştu.");
+        toast.error("Sunucuyla bağlantı hatası oluştu.", { style: { background: '#7f1d1d', color: '#fff' } });
       } finally {
         setIsUploading(false);
       }
     };
   };
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('tr-TR', { month: 'long', day: 'numeric', year: 'numeric' });
+  const getKarmaRank = (karma) => {
+    if (karma < 50) return { title: "Sinerji Çaylağı", icon: "🌱", color: "text-green-400", border: "border-green-500/30", bg: "bg-green-500/10", desc: "Ekosisteme yeni adım atmış, keşfetmeye aç." };
+    if (karma < 150) return { title: "Ağ Gezgini", icon: "🌍", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10", desc: "Bağlantılar kuran ve özel kabile inşa edebilen deneyimli gezgin." };
+    if (karma < 500) return { title: "Sistem Katalizörü", icon: "⚡", color: "text-purple-400", border: "border-purple-500/30", bg: "bg-purple-500/10", desc: "Topluluğu hızlandıran, kilit bilgiler paylaşan lider adayı." };
+    return { title: "Ekosistem Lideri", icon: "👑", color: "text-yellow-400", border: "border-yellow-500/30", bg: "bg-yellow-500/10", desc: "SinerjiHub'ın zirvesi. Stratejik trendlerin belirleyicisi." };
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
-        <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-        <p className="text-gray-400 font-medium tracking-widest uppercase text-[10px]">Profil Dünyası Yükleniyor...</p>
-      </div>
-    );
-  }
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleDateString('tr-TR', { year: 'numeric', month: 'long', day: 'numeric' });
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("userId");
+    router.push("/login");
+  };
+
+  if (isLoading) return (
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
+      <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p className="text-gray-400 font-black tracking-widest uppercase text-[10px]">Dijital CV Yükleniyor...</p>
+    </div>
+  );
+
+  const userRank = getKarmaRank(user?.karmaPoints || 0);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white font-sans selection:bg-purple-500/30 overflow-y-auto">
-      
-      {/* ÜST BAR (NAVBAR) */}
-      <nav className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-md sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 tracking-tighter">
-            SINERJIHUB
-          </h1>
-          <Link href="/dashboard" className="text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white transition-colors flex items-center gap-2">
-            <span>←</span> ANA ÜSSE DÖN
-          </Link>
-        </div>
-      </nav>
+    <div className="min-h-screen bg-[#0a0f1c] text-white font-sans selection:bg-indigo-500/30 relative overflow-hidden pb-20 md:pb-0">
+      <Toaster position="top-center" reverseOrder={false} />
 
-      <main className="max-w-6xl mx-auto px-6 py-12">
+      {/* ARKA PLAN EFEKTLERİ */}
+      <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-indigo-900/40 to-transparent -z-10"></div>
+      <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-600/10 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
+
+      {/* ÜST BİLGİ VE NAVİGASYON */}
+      <header className="px-8 py-6 max-w-7xl mx-auto flex justify-between items-center z-10 relative">
+        <Link href="/dashboard" className="flex items-center gap-3 text-gray-400 hover:text-white transition-all group">
+          <span className="w-10 h-10 bg-gray-800 border border-gray-700 rounded-full flex items-center justify-center group-hover:-translate-x-1 transition-transform">←</span>
+          <span className="text-[10px] font-black uppercase tracking-widest">Ana Üsse Dön</span>
+        </Link>
+        <button onClick={handleLogout} className="text-red-500 hover:text-red-400 text-[10px] font-black uppercase tracking-widest bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-xl transition-all">
+          Sistemden Çık
+        </button>
+      </header>
+
+      <main className="max-w-7xl mx-auto px-6 md:px-8 flex flex-col xl:flex-row gap-12 relative z-10 mt-4">
         
-        {/* KİMLİK KARTI (HERO SECTION) */}
-        <div className="bg-gray-800/30 border border-gray-700/50 rounded-[3rem] p-8 md:p-12 flex flex-col md:flex-row items-center gap-8 md:gap-12 relative overflow-hidden mb-12">
-          <div className="absolute -right-20 -top-20 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl -z-10"></div>
-          <div className="absolute -left-20 -bottom-20 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl -z-10"></div>
+        {/* SOL KOLON: KİŞİSEL PROFİL KARTI */}
+        <aside className="w-full xl:w-96 flex-shrink-0 space-y-8">
           
-          {/* FOTOĞRAF DEĞİŞTİRME ALANI */}
-          <div className="relative group cursor-pointer flex-shrink-0">
-            <div className="w-32 h-32 md:w-40 md:h-40 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center font-black text-6xl shadow-2xl ring-4 ring-gray-900 overflow-hidden relative">
+          <div className="bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-[2.5rem] p-8 text-center relative overflow-hidden shadow-2xl">
+            <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-20"></div>
+            
+            {/* FOTOĞRAF DEĞİŞTİRME ALANI (Senin kodunla birleşti) */}
+            <div className="relative group cursor-pointer w-32 h-32 mx-auto rounded-full shadow-[0_0_30px_rgba(99,102,241,0.3)] border-4 border-[#0a0f1c] z-10 mb-6 overflow-hidden bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center font-black text-4xl">
               {user?.profilePicture ? (
                 <img src={user.profilePicture} alt="Profil" className="w-full h-full object-cover" />
               ) : (
                 user?.username?.[0].toUpperCase()
               )}
               
-              {/* Üzerine gelince açılan havalı panel */}
-              <label className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] font-black uppercase tracking-widest text-white transition-opacity duration-200 cursor-pointer">
-                <span>{isUploading ? "Yükleniyor..." : "Değiştir 📸"}</span>
+              <label className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] font-black uppercase tracking-widest text-white transition-opacity duration-200 cursor-pointer">
+                <span>{isUploading ? "..." : "Değiştir 📸"}</span>
                 <input 
                   type="file" 
                   accept="image/*" 
@@ -149,81 +184,111 @@ export default function ProfilePage() {
                 />
               </label>
             </div>
-          </div>
-          
-          <div className="text-center md:text-left flex-1">
-            <h2 className="text-4xl md:text-5xl font-black tracking-tighter mb-2 italic uppercase">{user?.username}</h2>
-            <p className="text-gray-400 font-medium tracking-widest text-sm mb-6">{user?.email}</p>
             
-            <div className="flex flex-wrap justify-center md:justify-start gap-4">
-              <div className="bg-gray-900/50 border border-gray-700 px-6 py-3 rounded-2xl flex flex-col items-center md:items-start">
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Sinerji Puanı</span>
-                <span className="text-2xl font-black text-blue-400">{user?.karmaPoints || 0}</span>
+            <h1 className="text-3xl font-black tracking-tighter uppercase mb-1">{user?.username}</h1>
+            <p className="text-gray-400 text-xs font-medium tracking-widest mb-6">{user?.email}</p>
+
+            <div className={`flex flex-col items-center gap-2 ${userRank.bg} border ${userRank.border} p-4 rounded-2xl mb-8`}>
+              <span className="text-4xl mb-2">{userRank.icon}</span>
+              <span className={`text-xs font-black uppercase tracking-widest ${userRank.color}`}>{userRank.title}</span>
+              <span className="text-2xl font-black text-white">{user?.karmaPoints || 0} <span className="text-[10px] text-gray-500">KARMA</span></span>
+              <p className="text-[10px] text-gray-400 mt-2 font-medium leading-relaxed">{userRank.desc}</p>
+            </div>
+
+            <div className="flex justify-between items-center text-center border-t border-gray-700/50 pt-6">
+              <div>
+                <p className="text-2xl font-black text-indigo-400">{userPosts.length}</p>
+                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Çağrı</p>
               </div>
-              <div className="bg-gray-900/50 border border-gray-700 px-6 py-3 rounded-2xl flex flex-col items-center md:items-start">
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Kabileler</span>
-                <span className="text-2xl font-black text-purple-400">{user?.hubs?.length || 0}</span>
+              <div className="w-[1px] h-8 bg-gray-700"></div>
+              <div>
+                <p className="text-2xl font-black text-purple-400">{userHubs.length}</p>
+                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Kabile</p>
               </div>
-              <div className="bg-gray-900/50 border border-gray-700 px-6 py-3 rounded-2xl flex flex-col items-center md:items-start">
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Arkadaşlar</span>
-                <span className="text-2xl font-black text-green-400">{user?.friends?.length || 0}</span>
+              <div className="w-[1px] h-8 bg-gray-700"></div>
+              <div>
+                <p className="text-2xl font-black text-green-400">{user?.friends?.length || 0}</p>
+                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Ağ</p>
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          
-          {/* SOL KOLON: SOSYAL AĞ */}
-          <div className="space-y-8">
-            <div className="bg-gray-800/30 border border-gray-700/50 p-8 rounded-[2rem]">
-              <h3 className="text-sm font-black tracking-widest uppercase mb-6 text-gray-400 border-b border-gray-700/50 pb-4">Ağındaki Kişiler</h3>
-              {user?.friends?.length === 0 ? (
-                <p className="text-xs text-gray-500 font-medium">Henüz bir kabile dostun yok. İlanlardan insanlara ulaş!</p>
+          <div className="bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-[2.5rem] p-8">
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 flex items-center gap-2">
+              <span>🚀</span> İLGİ ALANLARI & YETENEKLER
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {userSkills.length === 0 ? (
+                <p className="text-[10px] text-gray-600 font-medium italic">Henüz bir yetenek sinyali bırakmadın. İlanlarında etiket kullan!</p>
               ) : (
-                <div className="space-y-4">
-                  {user?.friends?.map(friendId => (
-                    <div key={friendId} className="flex items-center gap-4 bg-gray-900/50 p-3 rounded-2xl border border-gray-700/30">
-                      <div className="w-10 h-10 bg-blue-600/20 text-blue-400 rounded-full flex items-center justify-center font-bold">
-                        👤
-                      </div>
-                      <div>
-                        <p className="text-sm font-bold">Gezgin #{friendId.substring(0,4)}</p>
-                        <p className="text-[10px] text-gray-500 uppercase">Bağlantı Kuruldu</p>
-                      </div>
-                    </div>
-                  ))}
+                userSkills.map((skill, idx) => (
+                  <span key={idx} className="bg-gray-900 border border-gray-700 text-gray-300 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest">
+                    #{skill}
+                  </span>
+                ))
+              )}
+            </div>
+          </div>
+        </aside>
+
+        {/* SAĞ KOLON: AKTİVİTE VE PORTFOLYO */}
+        <div className="flex-1 space-y-8">
+          
+          <div>
+            <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3 mb-6">
+              KABİLE AĞI <span className="h-[1px] flex-1 bg-gray-800"></span>
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {userHubs.length === 0 ? (
+                <div className="col-span-full bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] text-center">
+                  <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Henüz hiçbir kabileye katılmadın.</p>
                 </div>
+              ) : (
+                userHubs.map(hub => (
+                  <div key={hub._id} className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] hover:border-indigo-500/50 transition-all flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                      <span className="text-4xl">{hub.icon}</span>
+                      <span className="bg-gray-900 border border-gray-700 px-3 py-1 text-[9px] font-black uppercase text-gray-400 rounded-lg">{hub.category}</span>
+                    </div>
+                    <h4 className="font-bold text-white mb-2">{hub.name} {hub.isPrivate && "🔒"}</h4>
+                    <p className="text-[10px] text-gray-500 leading-relaxed mb-6 flex-1 line-clamp-2">{hub.description}</p>
+                    <Link href={`/hubs/${hub._id}`} className="w-full text-center bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 py-3 rounded-xl text-[10px] font-black hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-widest">
+                      Odaya Gir
+                    </Link>
+                  </div>
+                ))
               )}
             </div>
           </div>
 
-          {/* SAĞ KOLON: İLAN GEÇMİŞİ */}
-          <div className="lg:col-span-2 space-y-8">
-            <h3 className="text-sm font-black tracking-widest uppercase text-gray-400 border-b border-gray-800 pb-4">Senin İlanların & Çağrıların</h3>
-            
-            <div className="space-y-6">
+          <div>
+            <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3 mb-6">
+              SİNERJİ YANKILARI (SON ÇAĞRILAR) <span className="h-[1px] flex-1 bg-gray-800"></span>
+            </h3>
+            <div className="space-y-4">
               {userPosts.length === 0 ? (
-                <div className="bg-gray-800/20 border border-dashed border-gray-700 p-12 rounded-[2rem] text-center">
-                  <p className="text-gray-500 font-bold text-sm">Hiç ilan açmamışsın. Sinerjiyi başlatmak için ana üsse dön macro çağrını yap!</p>
+                <div className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] text-center">
+                  <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Henüz ekosisteme bir çağrı fırlatmadın.</p>
                 </div>
               ) : (
                 userPosts.map(post => (
-                  <div key={post._id} className="bg-gray-800/30 border border-gray-700/50 p-8 rounded-[2rem] hover:bg-gray-800/50 transition-all group">
-                    <div className="flex justify-between items-center mb-4">
-                      <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">{formatDate(post.createdAt)}</span>
-                      <span className="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest">
-                        {post.upvotes?.length || 0} Destek
+                  <div key={post._id} className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem]">
+                    <div className="flex justify-between items-center mb-3">
+                      <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">{formatDate(post.createdAt)}</span>
+                      <span className="text-[10px] bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg text-gray-400 font-black">
+                        🙌 {post.upvotes?.length || 0} DESTEK
                       </span>
                     </div>
-                    <p className="text-base text-gray-200 mb-6 leading-relaxed font-medium">{post.content}</p>
-                    <div className="flex flex-wrap gap-2">
-                      {post.tags?.map((tag, index) => (
-                        <span key={index} className="text-[10px] font-black uppercase tracking-widest bg-gray-900 text-gray-400 border border-gray-700 px-3 py-1.5 rounded-lg">
-                          #{tag}
-                        </span>
-                      ))}
-                    </div>
+                    <p className="text-sm text-gray-300 font-medium leading-relaxed mb-4">{post.content}</p>
+                    {post.tags?.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {post.tags.map((tag, idx) => (
+                          <span key={idx} className="text-[9px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))
               )}

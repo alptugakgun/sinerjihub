@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
 
-// Modülleri çağırıyoruz (Veritabanı Şablonları)
 const User = require('../models/User');
 const Hub = require('../models/Hub'); 
 const Message = require('../models/Message'); 
@@ -83,7 +82,7 @@ router.post('/join', async (req, res) => {
       return res.status(404).json({ message: "Kullanıcı veya Kabile bulunamadı." });
     }
 
-    // Eğer oda gizliyse ve dışarıdan girilen şifre uyuşmuyorsa içeri alma!
+    // Eğer oda gizliyse ve dışarıdan girilen şifre uyuşmuyorsa içeri alma
     if (hub.isPrivate && hub.passcode !== enteredPasscode) {
       return res.status(401).json({ message: "Hatalı şifre! Bu özel kabileye giriş iznin yok." });
     }
@@ -97,7 +96,7 @@ router.post('/join', async (req, res) => {
     // Kabileyi kullanıcının kendi hub listesine de ekle
     if (!user.hubs.includes(hubId)) {
       user.hubs.push(hubId);
-      // Kabileye katılma ödülü olarak 10 Karma Puanı veriyoruz!
+      // Kabileye katılma ödülü olarak 10 Karma Puanı
       user.karmaPoints = (user.karmaPoints || 0) + 10;
       await user.save();
     }
@@ -111,7 +110,6 @@ router.post('/join', async (req, res) => {
 // --- 5. KABİLE (ODA) İÇİ MESAJLARI GETİR ---
 router.get('/:id/messages', async (req, res) => {
   try {
-    // Belirli bir hubId'ye sahip tüm mesajları eskinden yeniye sıralayarak getiriyoruz
     const messages = await Message.find({ hubId: req.params.id }).sort({ createdAt: 1 });
     res.status(200).json(messages);
   } catch (err) {
@@ -119,23 +117,25 @@ router.get('/:id/messages', async (req, res) => {
   }
 });
 
-// --- 6. KABİLE (ODA) İÇİNE MESAJ GÖNDER (KALICI HAFIZA) ---
+// --- 6. KABİLE (ODA) İÇİNE DOSYA VEYA MESAJ GÖNDER (KALICI HAFIZA) ---
 router.post('/:id/messages/create', async (req, res) => {
   try {
-    const { userId, content } = req.body;
+    // Eklenen yeni dosya parametrelerini body'den alıyoruz
+    const { userId, content, attachment, attachmentName, attachmentType } = req.body;
     
-    // Mesajı kimin attığını bulmak için kullanıcıyı çekiyoruz
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-    // Yeni mesaj objesi oluşturuluyor
     const newMessage = new Message({
       hubId: req.params.id,
       user: userId,
       username: user.username,
-      content: content
+      content: content || "",
+      attachment: attachment || null,
+      attachmentName: attachmentName || null,
+      attachmentType: attachmentType || null
     });
 
     const savedMessage = await newMessage.save();

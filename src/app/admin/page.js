@@ -10,7 +10,7 @@ export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passkey, setPasskey] = useState("");
   const [authError, setAuthError] = useState(false);
-  const SECRET_PASSKEY = "SINERJI2026"; // Kurucu Şifresi (Burayı dilediğin gibi değiştir)
+  const SECRET_PASSKEY = "1453Alp1."; // Kurucu Şifresi (Burayı dilediğin gibi değiştir)
 
   // --- TEMEL DURUMLAR ---
   const [user, setUser] = useState(null);

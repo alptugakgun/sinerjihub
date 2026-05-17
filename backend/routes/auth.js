@@ -18,6 +18,12 @@ router.post('/register', async (req, res) => {
       return res.status(400).json({ message: "Bu kullanıcı adı daha önce alınmış." });
     }
 
+    // GROWTH HACKING: Sistemdeki mevcut toplam kullanıcı sayısını bul
+    const userCount = await User.countDocuments();
+    
+    // ZEKİ ALGORİTMA: İlk 1000 kişiye 50 Karma (Ağ Gezgini) ver, 1001. kişi 0'dan başlasın
+    const startingKarma = userCount < 1000 ? 50 : 0;
+
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
@@ -25,7 +31,10 @@ router.post('/register', async (req, res) => {
       username,
       email,
       password: hashedPassword,
-      interests: interests || []
+      interests: interests || [],
+      karmaPoints: startingKarma, // İlk 1000 kişi jesti buraya eklendi!
+      hubs: [],
+      friends: []
     });
 
     const savedUser = await newUser.save();
@@ -90,7 +99,7 @@ router.put('/update-avatar/:id', async (req, res) => {
   }
 });
 
-// --- 5. YENİ: SİNERJİ RADARI (YAPAY ZEKA / EŞLEŞTİRME ALGORİTMASI) ---
+// --- 5. SİNERJİ RADARI (YAPAY ZEKA / EŞLEŞTİRME ALGORİTMASI) ---
 router.get('/recommendations/:id', async (req, res) => {
   try {
     const currentUser = await User.findById(req.params.id);

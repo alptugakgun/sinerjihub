@@ -1,14 +1,15 @@
 const express = require('express');
 const router = express.Router();
+
 const Post = require('../models/Post');
 const User = require('../models/User');
-const Notification = require('../models/Notification'); // YENİ: Bildirim modeli dahil edildi
+const Comment = require('../models/Comment'); // YENİ: Yorum modelini çağırdık
 
-// 1. YENİ İLAN OLUŞTURMA (POST)
+// --- 1. YENİ İLAN (POST) OLUŞTURMA ---
 router.post('/create', async (req, res) => {
   try {
     const { userId, content, tags } = req.body;
-
+    
     const user = await User.findById(userId);
     if (!user) {
       return res.status(404).json({ message: "Kullanıcı bulunamadı." });
@@ -16,11 +17,12 @@ router.post('/create', async (req, res) => {
 
     const newPost = new Post({
       user: userId,
-      username: user.username || "Gezgin",
+      username: user.username,
       content,
-      tags
+      tags: tags || [],
+      upvotes: []
     });
-
+    
     const savedPost = await newPost.save();
     res.status(201).json(savedPost);
   } catch (err) {
@@ -28,9 +30,10 @@ router.post('/create', async (req, res) => {
   }
 });
 
-// 2. TÜM İLANLARI GETİRME (GET)
+// --- 2. TÜM İLANLARI GETİRME (Dashboard Akışı İçin) ---
 router.get('/all', async (req, res) => {
   try {
+    // En yeni ilan en üstte gelsin diye -1 ile sıralıyoruz
     const posts = await Post.find().sort({ createdAt: -1 });
     res.status(200).json(posts);
   } catch (err) {
@@ -38,54 +41,66 @@ router.get('/all', async (req, res) => {
   }
 });
 
-// 3. BELİRLİ BİR KULLANICININ İLANLARINI GETİRME (GET)
-router.get('/user/:userId', async (req, res) => {
+// --- 3. İLANA DESTEK VERME (UPVOTE) ---
+router.post('/upvote/:id', async (req, res) => {
   try {
-    const userPosts = await Post.find({ user: req.params.userId }).sort({ createdAt: -1 });
-    res.status(200).json(userPosts);
+    const { userId } = req.body;
+    const post = await Post.findById(req.params.id);
+    
+    if (!post) {
+      return res.status(404).json({ message: "İlan bulunamadı." });
+    }
+
+    // Kullanıcı daha önce beğenmediyse listeye ekle
+    if (!post.upvotes.includes(userId)) {
+      post.upvotes.push(userId);
+      await post.save();
+    }
+    
+    res.status(200).json(post);
   } catch (err) {
-    res.status(500).json({ message: "Kullanıcı ilanları getirilemedi.", error: err.message });
+    res.status(500).json({ message: "Beğeni işlemi başarısız oldu.", error: err.message });
   }
 });
 
-// 4. İLANI DESTEKLE (UPVOTE), KARMA KAZANDIR VE BİLDİRİM GÖNDER (POST)
-router.post('/upvote/:postId', async (req, res) => {
+// --- 4. YENİ: İLANA YORUM (YANKI) EKLEME ---
+router.post('/:id/comment', async (req, res) => {
   try {
-    const { userId } = req.body; // Butona basan kişinin ID'si
-    const post = await Post.findById(req.params.postId);
-
-    if (!post) return res.status(404).json({ message: "İlan bulunamadı." });
-
-    // Kullanıcı kendi ilanını destekleyemez
-    if (post.user.toString() === userId) {
-      return res.status(400).json({ message: "Kendi ilanını destekleyemezsin dostum!" });
+    const { userId, content } = req.body;
+    
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     }
 
-    // Kullanıcı zaten desteklemiş mi?
-    if (post.upvotes.includes(userId)) {
-      return res.status(400).json({ message: "Bu ilanı zaten destekledin." });
-    }
-
-    // 1. İlanın upvotes dizisine kullanıcıyı ekle
-    post.upvotes.push(userId);
-    await post.save();
-
-    // 2. İlan sahibinin Karma puanını artır (+5 Karma)
-    await User.findByIdAndUpdate(post.user, { $inc: { karmaPoints: 5 } });
-
-    // 3. YENİ: İLAN SAHİBİNE BİLDİRİM GÖNDER
-    const senderUser = await User.findById(userId); // Destekleyen kişiyi bul
-    const newNotification = new Notification({
-      recipient: post.user, // İlan sahibi (Bildirimi alacak kişi)
-      sender: userId, // Destekleyen (Bildirimi tetikleyen kişi)
-      type: "upvote",
-      message: `${senderUser.username} kabile çağrını destekledi. Sana +5 Karma kazandırdı! 🌟`
+    // Yeni yorumu oluştur ve kaydet
+    const newComment = new Comment({
+      postId: req.params.id,
+      user: userId,
+      username: user.username,
+      content: content
     });
-    await newNotification.save();
 
-    res.status(200).json({ message: "Desteklendi! +5 Karma ilan sahibine gitti ve bildirim gönderildi.", post });
+    const savedComment = await newComment.save();
+
+    // OYUNLAŞTIRMA: Yorum yapan kullanıcıya ekosisteme katkısından dolayı +2 Karma ver!
+    user.karmaPoints = (user.karmaPoints || 0) + 2;
+    await user.save();
+
+    res.status(201).json(savedComment);
   } catch (err) {
-    res.status(500).json({ message: "İşlem başarısız.", error: err.message });
+    res.status(500).json({ message: "Yorum eklenirken evrende bir hata oluştu.", error: err.message });
+  }
+});
+
+// --- 5. YENİ: BİR İLANIN TÜM YORUMLARINI GETİRME ---
+router.get('/:id/comments', async (req, res) => {
+  try {
+    // İlgili ilana ait yorumları bul ve eski yorum en üstte olacak şekilde (1) sırala
+    const comments = await Comment.find({ postId: req.params.id }).sort({ createdAt: 1 });
+    res.status(200).json(comments);
+  } catch (err) {
+    res.status(500).json({ message: "Yorumlar getirilemedi.", error: err.message });
   }
 });
 
