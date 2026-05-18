@@ -6,11 +6,10 @@ import { useRouter } from "next/navigation";
 export default function AdminPage() {
   const router = useRouter();
   
-  // --- GÜVENLİK (TANRI MODU KİLİDİ - YENİLENMİŞ GÜVENLİ SÜRÜM) ---
+  // --- GÜVENLİK (TANRI MODU KİLİDİ) ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passkey, setPasskey] = useState("");
   const [authError, setAuthError] = useState(false);
-  // DİKKAT: Şifre kontrolü artık güvenli Backend (.env) üzerinden yapılıyor!
 
   // --- TEMEL DURUMLAR ---
   const [user, setUser] = useState(null);
@@ -29,7 +28,7 @@ export default function AdminPage() {
   });
   const [isCreating, setIsCreating] = useState(false);
 
-  // --- KULLANICI ARAMA VE DÜZENLEME (TANRI MODU MOTORU) ---
+  // --- KULLANICI ARAMA VE DÜZENLEME ---
   const [searchedEmail, setSearchedEmail] = useState("");
   const [foundUser, setFoundUser] = useState(null);
   const [searchError, setSearchError] = useState("");
@@ -37,6 +36,9 @@ export default function AdminPage() {
   const [editRoles, setEditRoles] = useState([]);
   const [editKarma, setEditKarma] = useState(0);
   const [isUpdating, setIsUpdating] = useState(false);
+
+  // --- YENİ EKLENEN: GERİ BİLDİRİM KUTUSU ---
+  const [feedbacks, setFeedbacks] = useState([]);
 
   useEffect(() => {
     const fetchAdminData = async () => {
@@ -72,7 +74,7 @@ export default function AdminPage() {
     fetchAdminData();
   }, [router]);
 
-  // --- ŞİFRE KONTROL MOTORU (GÜVENLİ BACKEND'E BAĞLI) ---
+  // --- ŞİFRE KONTROL MOTORU VE FEEDBACKLERİ ÇEKME ---
   const handleAuth = async (e) => {
     e.preventDefault();
     try {
@@ -86,13 +88,51 @@ export default function AdminPage() {
       if (res.ok && data.success) {
         setIsAuthenticated(true);
         setAuthError(false);
-        // passkey state içinde tutulmaya devam ediyor, Backend isteklerinde (Arama/Güncelleme) header olarak göndereceğiz.
+        // Giriş başarılıysa arka planda hemen Geri Bildirimleri de çek!
+        fetchFeedbacks(passkey);
       } else {
         setAuthError(true);
         setPasskey("");
       }
     } catch (err) {
       alert("Sunucuya bağlanılamadı. Backend rotalarını kontrol et dostum.");
+    }
+  };
+
+  // --- YENİ: GERİ BİLDİRİMLERİ SUNUCUDAN GETİR ---
+  const fetchFeedbacks = async (adminKey) => {
+    try {
+      const res = await fetch("https://sinerjihub-1.onrender.com/api/feedback/all", {
+        headers: { "x-admin-password": adminKey }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFeedbacks(data);
+      }
+    } catch (err) {
+      console.error("Geri bildirimler çekilemedi.", err);
+    }
+  };
+
+  // --- YENİ: GERİ BİLDİRİM DURUMUNU GÜNCELLE ---
+  const handleUpdateFeedbackStatus = async (id, newStatus) => {
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/feedback/update-status/${id}`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          "x-admin-password": passkey
+        },
+        body: JSON.stringify({ status: newStatus })
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        // Arayüzdeki listeyi anında güncelle
+        setFeedbacks(feedbacks.map(f => f._id === id ? data.feedback : f));
+      }
+    } catch (err) {
+      alert("Durum güncellenirken bir hata oluştu.");
     }
   };
 
@@ -116,13 +156,12 @@ export default function AdminPage() {
         alert("Kabile oluşturulamadı. Sunucuyu kontrol et.");
       }
     } catch (err) {
-      alert("Bağlantı hatası! Backend API'sinde '/api/hubs/create' rotasının açık olduğundan emin ol.");
+      alert("Bağlantı hatası!");
     } finally {
       setIsCreating(false);
     }
   };
 
-  // --- KULLANICI ARAMA FONKSİYONU ---
   const handleSearchUser = async (e) => {
     e.preventDefault();
     setIsSearching(true);
@@ -133,7 +172,7 @@ export default function AdminPage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-password": passkey // Güvenlik katmanı
+          "x-admin-password": passkey 
         },
         body: JSON.stringify({ email: searchedEmail })
       });
@@ -152,7 +191,6 @@ export default function AdminPage() {
     }
   };
 
-  // --- KULLANICI GÜNCELLEME (RÜTBE VE PUAN) FONKSİYONU ---
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     setIsUpdating(true);
@@ -161,7 +199,7 @@ export default function AdminPage() {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          "x-admin-password": passkey // Güvenlik katmanı
+          "x-admin-password": passkey
         },
         body: JSON.stringify({ roles: editRoles, karmaPoints: Number(editKarma) })
       });
@@ -179,7 +217,6 @@ export default function AdminPage() {
     }
   };
 
-  // Rütbe Butonları için Seçim Algoritması
   const toggleRole = (role) => {
     if (editRoles.includes(role)) {
       setEditRoles(editRoles.filter(r => r !== role)); 
@@ -236,9 +273,8 @@ export default function AdminPage() {
 
   // --- ŞİFRE DOĞRUYSA ANA PANELİ GÖSTER ---
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-red-500/30 overflow-y-auto bg-grid-red-900/[0.03]">
+    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-red-500/30 overflow-y-auto bg-grid-red-900/[0.03] pb-20">
       
-      {/* ÜST BAR (NAVBAR) */}
       <nav className="border-b border-red-900/50 bg-[#0a0a0a]/80 backdrop-blur-xl sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -276,14 +312,12 @@ export default function AdminPage() {
 
           <div className="bg-gradient-to-br from-gray-900 to-[#0a0a0a] border border-green-900/30 p-8 rounded-[2rem] relative overflow-hidden group">
             <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-green-600/10 rounded-full blur-2xl group-hover:bg-green-600/20 transition-all"></div>
-            <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2">Sistem Durumu</p>
-            <p className="text-3xl font-black text-green-500 mt-2 flex items-center gap-2">
-              <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span> AKTİF
-            </p>
+            <p className="text-[10px] font-black text-gray-500 uppercase tracking-[0.2em] mb-2">Gelen Bildirim</p>
+            <p className="text-5xl font-black text-green-500">{feedbacks.filter(f => f.status === 'Beklemede').length}</p>
           </div>
         </div>
 
-        {/* --- GEZGİN SORGULAMA VE YETKİLENDİRME PANELİ --- */}
+        {/* --- GEZGİN SORGULAMA VE YETKİLENDİRME --- */}
         <div className="bg-[#0a0a0a] border border-red-900/40 p-8 md:p-10 rounded-[2.5rem] shadow-2xl mb-12 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
           <h3 className="text-xl font-black mb-6 tracking-tight text-gray-200 border-b border-red-900/30 pb-4 flex items-center gap-3">
@@ -367,6 +401,59 @@ export default function AdminPage() {
               </form>
             </div>
           )}
+        </div>
+
+        {/* --- YENİ EKLENEN: GELEN İSTEK VE ÖNERİLER (FEEDBACK INBOX) --- */}
+        <div className="bg-[#0a0a0a] border border-orange-900/40 p-8 md:p-10 rounded-[2.5rem] shadow-2xl mb-12 relative overflow-hidden">
+           <h3 className="text-xl font-black mb-8 tracking-tight text-gray-200 border-b border-orange-900/30 pb-4 flex items-center gap-3">
+            <span>📬</span> GELEN İSTEK VE ÖNERİLER
+          </h3>
+
+          <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+            {feedbacks.length === 0 ? (
+              <p className="text-gray-600 text-sm font-medium italic text-center py-8">Henüz hiçbir geri bildirim yok.</p>
+            ) : (
+              feedbacks.map(fb => {
+                let statusColor = "text-gray-500 bg-gray-800 border-gray-700";
+                if (fb.status === "Beklemede") statusColor = "text-orange-400 bg-orange-900/20 border-orange-500/30";
+                if (fb.status === "İncelendi") statusColor = "text-blue-400 bg-blue-900/20 border-blue-500/30";
+                if (fb.status === "Tamamlandı") statusColor = "text-green-400 bg-green-900/20 border-green-500/30";
+
+                return (
+                  <div key={fb._id} className="bg-gray-900/50 border border-gray-800 p-6 rounded-2xl flex flex-col hover:border-gray-600 transition-colors">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400 mr-3">@{fb.username}</span>
+                        <span className="text-[9px] font-black bg-gray-800 px-2 py-1 rounded text-gray-300 border border-gray-700">{fb.type}</span>
+                      </div>
+                      <span className="text-[9px] text-gray-500 font-black uppercase">{new Date(fb.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    
+                    <p className="text-sm text-gray-300 leading-relaxed font-medium mb-6">{fb.content}</p>
+                    
+                    <div className="flex items-center justify-between pt-4 border-t border-gray-800">
+                      <span className={`text-[9px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg border ${statusColor}`}>
+                        {fb.status}
+                      </span>
+                      
+                      <div className="flex gap-2">
+                        {fb.status === "Beklemede" && (
+                          <button onClick={() => handleUpdateFeedbackStatus(fb._id, "İncelendi")} className="text-[9px] font-black uppercase bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white px-4 py-2 rounded-lg transition-all">
+                            İncelemeye Al
+                          </button>
+                        )}
+                        {fb.status !== "Tamamlandı" && (
+                          <button onClick={() => handleUpdateFeedbackStatus(fb._id, "Tamamlandı")} className="text-[9px] font-black uppercase bg-green-600/20 text-green-400 hover:bg-green-600 hover:text-white px-4 py-2 rounded-lg transition-all">
+                            Tamamlandı Yap
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">

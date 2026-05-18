@@ -14,6 +14,11 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
 
+  // --- YENİ EKLENEN: GERİ BİLDİRİM (FEEDBACK) DURUMLARI ---
+  const [feedbackContent, setFeedbackContent] = useState("");
+  const [feedbackType, setFeedbackType] = useState("Öneri");
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
   // --- PROFİL VE PORTFOLYO VERİ MOTORU ---
   useEffect(() => {
     const fetchProfileData = async () => {
@@ -24,7 +29,6 @@ export default function ProfilePage() {
       }
 
       try {
-        // 1. Kullanıcı Verisini Çek
         const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
         if (userRes.ok) {
           const userData = await userRes.json();
@@ -35,14 +39,12 @@ export default function ProfilePage() {
           return;
         }
 
-        // 2. Tüm İlanları Çek ve Bu Kullanıcıya Ait Olanları Filtrele
         const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
         if (postsRes.ok) {
           const allPosts = await postsRes.json();
           const myPosts = allPosts.filter(post => post.user === userId);
           setUserPosts(myPosts);
 
-          // Dinamik Yetenekler (İlanlarındaki etiketleri topluyoruz)
           const skillsSet = new Set();
           myPosts.forEach(post => {
             if (post.tags) {
@@ -52,7 +54,6 @@ export default function ProfilePage() {
           setUserSkills(Array.from(skillsSet));
         }
 
-        // 3. Tüm Kabileleri (Hubs) Çek ve Kullanıcının Üye Olduklarını Filtrele
         const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
         if (hubsRes.ok) {
           const allHubs = await hubsRes.json();
@@ -113,6 +114,42 @@ export default function ProfilePage() {
     };
   };
 
+  // --- YENİ EKLENEN: GERİ BİLDİRİM GÖNDERME FONKSİYONU ---
+  const handleFeedbackSubmit = async (e) => {
+    e.preventDefault();
+    if (!feedbackContent.trim()) return;
+
+    setIsSubmittingFeedback(true);
+    const userId = localStorage.getItem("userId");
+
+    try {
+      const res = await fetch("https://sinerjihub-1.onrender.com/api/feedback/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: userId,
+          username: user.username,
+          content: feedbackContent,
+          type: feedbackType
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success("Mesajın kuruculara iletildi! Katkın için teşekkürler. 🚀", { style: { background: '#1f2937', color: '#fff' } });
+        setFeedbackContent("");
+        setFeedbackType("Öneri");
+      } else {
+        toast.error(data.message || "Geri bildirim iletilemedi.", { style: { background: '#7f1d1d', color: '#fff' } });
+      }
+    } catch (err) {
+      toast.error("Bağlantı hatası! Sisteme ulaşılamıyor.", { style: { background: '#7f1d1d', color: '#fff' } });
+    } finally {
+      setIsSubmittingFeedback(false);
+    }
+  };
+
   const getKarmaRank = (karma) => {
     if (karma < 50) return { title: "Sinerji Çaylağı", icon: "🌱", color: "text-green-400", border: "border-green-500/30", bg: "bg-green-500/10", desc: "Ekosisteme yeni adım atmış, keşfetmeye aç." };
     if (karma < 150) return { title: "Ağ Gezgini", icon: "🌍", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10", desc: "Bağlantılar kuran ve özel kabile inşa edebilen deneyimli gezgin." };
@@ -142,11 +179,9 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-[#0a0f1c] text-white font-sans selection:bg-indigo-500/30 relative overflow-hidden pb-20 md:pb-0">
       <Toaster position="top-center" reverseOrder={false} />
 
-      {/* ARKA PLAN EFEKTLERİ */}
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-indigo-900/40 to-transparent -z-10"></div>
       <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-600/10 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
 
-      {/* ÜST BİLGİ VE NAVİGASYON */}
       <header className="px-8 py-6 max-w-7xl mx-auto flex justify-between items-center z-10 relative">
         <Link href="/dashboard" className="flex items-center gap-3 text-gray-400 hover:text-white transition-all group">
           <span className="w-10 h-10 bg-gray-800 border border-gray-700 rounded-full flex items-center justify-center group-hover:-translate-x-1 transition-transform">←</span>
@@ -159,13 +194,11 @@ export default function ProfilePage() {
 
       <main className="max-w-7xl mx-auto px-6 md:px-8 flex flex-col xl:flex-row gap-12 relative z-10 mt-4">
         
-        {/* SOL KOLON: KİŞİSEL PROFİL KARTI */}
         <aside className="w-full xl:w-96 flex-shrink-0 space-y-8">
           
           <div className="bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-[2.5rem] p-8 text-center relative overflow-hidden shadow-2xl">
             <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-r from-indigo-600 to-purple-600 opacity-20"></div>
             
-            {/* FOTOĞRAF DEĞİŞTİRME ALANI (Senin kodunla birleşti) */}
             <div className="relative group cursor-pointer w-32 h-32 mx-auto rounded-full shadow-[0_0_30px_rgba(99,102,241,0.3)] border-4 border-[#0a0f1c] z-10 mb-6 overflow-hidden bg-gradient-to-tr from-indigo-500 to-purple-600 flex items-center justify-center font-black text-4xl">
               {user?.profilePicture ? (
                 <img src={user.profilePicture} alt="Profil" className="w-full h-full object-cover" />
@@ -175,13 +208,7 @@ export default function ProfilePage() {
               
               <label className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-[10px] font-black uppercase tracking-widest text-white transition-opacity duration-200 cursor-pointer">
                 <span>{isUploading ? "..." : "Değiştir 📸"}</span>
-                <input 
-                  type="file" 
-                  accept="image/*" 
-                  onChange={handleImageUpload} 
-                  className="hidden" 
-                  disabled={isUploading}
-                />
+                <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" disabled={isUploading} />
               </label>
             </div>
             
@@ -196,65 +223,42 @@ export default function ProfilePage() {
             </div>
 
             <div className="flex justify-between items-center text-center border-t border-gray-700/50 pt-6">
-              <div>
-                <p className="text-2xl font-black text-indigo-400">{userPosts.length}</p>
-                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Çağrı</p>
-              </div>
+              <div><p className="text-2xl font-black text-indigo-400">{userPosts.length}</p><p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Çağrı</p></div>
               <div className="w-[1px] h-8 bg-gray-700"></div>
-              <div>
-                <p className="text-2xl font-black text-purple-400">{userHubs.length}</p>
-                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Kabile</p>
-              </div>
+              <div><p className="text-2xl font-black text-purple-400">{userHubs.length}</p><p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Kabile</p></div>
               <div className="w-[1px] h-8 bg-gray-700"></div>
-              <div>
-                <p className="text-2xl font-black text-green-400">{user?.friends?.length || 0}</p>
-                <p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Ağ</p>
-              </div>
+              <div><p className="text-2xl font-black text-green-400">{user?.friends?.length || 0}</p><p className="text-[9px] text-gray-500 font-black uppercase tracking-widest">Ağ</p></div>
             </div>
           </div>
 
           <div className="bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-[2.5rem] p-8">
-            <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 flex items-center gap-2">
-              <span>🚀</span> İLGİ ALANLARI & YETENEKLER
-            </h3>
+            <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 flex items-center gap-2"><span>🚀</span> İLGİ ALANLARI & YETENEKLER</h3>
             <div className="flex flex-wrap gap-2">
               {userSkills.length === 0 ? (
                 <p className="text-[10px] text-gray-600 font-medium italic">Henüz bir yetenek sinyali bırakmadın. İlanlarında etiket kullan!</p>
               ) : (
                 userSkills.map((skill, idx) => (
-                  <span key={idx} className="bg-gray-900 border border-gray-700 text-gray-300 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest">
-                    #{skill}
-                  </span>
+                  <span key={idx} className="bg-gray-900 border border-gray-700 text-gray-300 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest">#{skill}</span>
                 ))
               )}
             </div>
           </div>
         </aside>
 
-        {/* SAĞ KOLON: AKTİVİTE VE PORTFOLYO */}
         <div className="flex-1 space-y-8">
           
           <div>
-            <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3 mb-6">
-              KABİLE AĞI <span className="h-[1px] flex-1 bg-gray-800"></span>
-            </h3>
+            <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3 mb-6">KABİLE AĞI <span className="h-[1px] flex-1 bg-gray-800"></span></h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {userHubs.length === 0 ? (
-                <div className="col-span-full bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] text-center">
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Henüz hiçbir kabileye katılmadın.</p>
-                </div>
+                <div className="col-span-full bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] text-center"><p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Henüz hiçbir kabileye katılmadın.</p></div>
               ) : (
                 userHubs.map(hub => (
                   <div key={hub._id} className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] hover:border-indigo-500/50 transition-all flex flex-col">
-                    <div className="flex justify-between items-start mb-4">
-                      <span className="text-4xl">{hub.icon}</span>
-                      <span className="bg-gray-900 border border-gray-700 px-3 py-1 text-[9px] font-black uppercase text-gray-400 rounded-lg">{hub.category}</span>
-                    </div>
+                    <div className="flex justify-between items-start mb-4"><span className="text-4xl">{hub.icon}</span><span className="bg-gray-900 border border-gray-700 px-3 py-1 text-[9px] font-black uppercase text-gray-400 rounded-lg">{hub.category}</span></div>
                     <h4 className="font-bold text-white mb-2">{hub.name} {hub.isPrivate && "🔒"}</h4>
                     <p className="text-[10px] text-gray-500 leading-relaxed mb-6 flex-1 line-clamp-2">{hub.description}</p>
-                    <Link href={`/hubs/${hub._id}`} className="w-full text-center bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 py-3 rounded-xl text-[10px] font-black hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-widest">
-                      Odaya Gir
-                    </Link>
+                    <Link href={`/hubs/${hub._id}`} className="w-full text-center bg-indigo-600/10 text-indigo-400 border border-indigo-500/20 py-3 rounded-xl text-[10px] font-black hover:bg-indigo-600 hover:text-white transition-all uppercase tracking-widest">Odaya Gir</Link>
                   </div>
                 ))
               )}
@@ -262,30 +266,22 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3 mb-6">
-              SİNERJİ YANKILARI (SON ÇAĞRILAR) <span className="h-[1px] flex-1 bg-gray-800"></span>
-            </h3>
+            <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3 mb-6">SİNERJİ YANKILARI (SON ÇAĞRILAR) <span className="h-[1px] flex-1 bg-gray-800"></span></h3>
             <div className="space-y-4">
               {userPosts.length === 0 ? (
-                <div className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] text-center">
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Henüz ekosisteme bir çağrı fırlatmadın.</p>
-                </div>
+                <div className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] text-center"><p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Henüz ekosisteme bir çağrı fırlatmadın.</p></div>
               ) : (
                 userPosts.map(post => (
                   <div key={post._id} className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem]">
                     <div className="flex justify-between items-center mb-3">
                       <span className="text-[9px] text-gray-500 font-black uppercase tracking-widest">{formatDate(post.createdAt)}</span>
-                      <span className="text-[10px] bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg text-gray-400 font-black">
-                        🙌 {post.upvotes?.length || 0} DESTEK
-                      </span>
+                      <span className="text-[10px] bg-gray-900 border border-gray-700 px-3 py-1 rounded-lg text-gray-400 font-black">🙌 {post.upvotes?.length || 0} DESTEK</span>
                     </div>
                     <p className="text-sm text-gray-300 font-medium leading-relaxed mb-4">{post.content}</p>
                     {post.tags?.length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         {post.tags.map((tag, idx) => (
-                          <span key={idx} className="text-[9px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
-                            #{tag}
-                          </span>
+                          <span key={idx} className="text-[9px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">#{tag}</span>
                         ))}
                       </div>
                     )}
@@ -293,6 +289,44 @@ export default function ProfilePage() {
                 ))
               )}
             </div>
+          </div>
+
+          {/* --- YENİ EKLENEN: İSTEK VE ÖNERİ (GERİ BİLDİRİM) KUTUSU --- */}
+          <div className="bg-indigo-900/10 border border-indigo-500/30 p-8 rounded-[2.5rem] relative overflow-hidden">
+            <div className="absolute right-0 bottom-0 text-[120px] opacity-5">📬</div>
+            <h3 className="text-lg font-black tracking-tight italic text-indigo-300 flex items-center gap-3 mb-2 relative z-10">EKOSİSTEMİ ŞEKİLLENDİR</h3>
+            <p className="text-xs text-gray-400 font-medium mb-6 relative z-10">SinerjiHub senin fikirlerinle büyüyor. Kuruculara doğrudan ulaş!</p>
+
+            <form onSubmit={handleFeedbackSubmit} className="relative z-10 space-y-4">
+              <div className="flex gap-4">
+                <select 
+                  value={feedbackType} 
+                  onChange={(e) => setFeedbackType(e.target.value)}
+                  className="bg-gray-900/80 border border-gray-700 rounded-xl px-4 py-3 text-sm text-gray-300 outline-none focus:border-indigo-500"
+                >
+                  <option value="Öneri">💡 Öneri</option>
+                  <option value="İstek">🚀 İstek (Yeni Özellik)</option>
+                  <option value="Hata Bildirimi">🐛 Hata Bildirimi</option>
+                  <option value="Diğer">✉️ Diğer</option>
+                </select>
+              </div>
+
+              <textarea 
+                required
+                value={feedbackContent}
+                onChange={(e) => setFeedbackContent(e.target.value)}
+                placeholder="Aklındaki nedir? Bize anlat..."
+                className="w-full bg-gray-900/80 border border-gray-700 rounded-xl px-5 py-4 text-sm text-white outline-none focus:border-indigo-500 h-28 resize-none"
+              />
+
+              <button 
+                type="submit" 
+                disabled={isSubmittingFeedback}
+                className="bg-indigo-600 hover:bg-indigo-500 text-white font-black px-8 py-3.5 rounded-xl uppercase tracking-widest text-[10px] transition-all disabled:opacity-50"
+              >
+                {isSubmittingFeedback ? "Gönderiliyor..." : "Kuruculara İlet"}
+              </button>
+            </form>
           </div>
 
         </div>
