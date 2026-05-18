@@ -10,8 +10,7 @@ export default function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passkey, setPasskey] = useState("");
   const [authError, setAuthError] = useState(false);
-  // DİKKAT: SECRET_PASSKEY değişkeni güvenlik sebebiyle kaldırıldı. 
-  // Şifre kontrolü artık güvenli Backend (.env) üzerinden yapılıyor!
+  // DİKKAT: Şifre kontrolü artık güvenli Backend (.env) üzerinden yapılıyor!
 
   // --- TEMEL DURUMLAR ---
   const [user, setUser] = useState(null);
@@ -30,7 +29,7 @@ export default function AdminPage() {
   });
   const [isCreating, setIsCreating] = useState(false);
 
-  // --- YENİ: KULLANICI ARAMA VE DÜZENLEME (TANRI MODU MOTORU) ---
+  // --- KULLANICI ARAMA VE DÜZENLEME (TANRI MODU MOTORU) ---
   const [searchedEmail, setSearchedEmail] = useState("");
   const [foundUser, setFoundUser] = useState(null);
   const [searchError, setSearchError] = useState("");
@@ -73,7 +72,7 @@ export default function AdminPage() {
     fetchAdminData();
   }, [router]);
 
-  // --- ŞİFRE KONTROL MOTORU (ARTIK GÜVENLİ BACKEND'E BAĞLI) ---
+  // --- ŞİFRE KONTROL MOTORU (GÜVENLİ BACKEND'E BAĞLI) ---
   const handleAuth = async (e) => {
     e.preventDefault();
     try {
@@ -87,7 +86,7 @@ export default function AdminPage() {
       if (res.ok && data.success) {
         setIsAuthenticated(true);
         setAuthError(false);
-        // passkey state içinde tutulmaya devam ediyor, çünkü backend isteklerinde (Arama/Güncelleme) header olarak göndereceğiz.
+        // passkey state içinde tutulmaya devam ediyor, Backend isteklerinde (Arama/Güncelleme) header olarak göndereceğiz.
       } else {
         setAuthError(true);
         setPasskey("");
@@ -123,7 +122,7 @@ export default function AdminPage() {
     }
   };
 
-  // --- YENİ EKLENEN: KULLANICI ARAMA FONKSİYONU ---
+  // --- KULLANICI ARAMA FONKSİYONU ---
   const handleSearchUser = async (e) => {
     e.preventDefault();
     setIsSearching(true);
@@ -153,7 +152,7 @@ export default function AdminPage() {
     }
   };
 
-  // --- YENİ EKLENEN: KULLANICI GÜNCELLEME (RÜTBE VE PUAN) FONKSİYONU ---
+  // --- KULLANICI GÜNCELLEME (RÜTBE VE PUAN) FONKSİYONU ---
   const handleUpdateUser = async (e) => {
     e.preventDefault();
     setIsUpdating(true);
@@ -183,9 +182,9 @@ export default function AdminPage() {
   // Rütbe Butonları için Seçim Algoritması
   const toggleRole = (role) => {
     if (editRoles.includes(role)) {
-      setEditRoles(editRoles.filter(r => r !== role)); // Varsa çıkar
+      setEditRoles(editRoles.filter(r => r !== role)); 
     } else {
-      setEditRoles([...editRoles, role]); // Yoksa ekle
+      setEditRoles([...editRoles, role]); 
     }
   };
 
@@ -284,7 +283,7 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* --- YENİ EKLENEN: GEZGİN SORGULAMA VE YETKİLENDİRME PANELİ --- */}
+        {/* --- GEZGİN SORGULAMA VE YETKİLENDİRME PANELİ --- */}
         <div className="bg-[#0a0a0a] border border-red-900/40 p-8 md:p-10 rounded-[2.5rem] shadow-2xl mb-12 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
           <h3 className="text-xl font-black mb-6 tracking-tight text-gray-200 border-b border-red-900/30 pb-4 flex items-center gap-3">
