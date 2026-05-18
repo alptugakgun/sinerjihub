@@ -13,6 +13,7 @@ const hubRoute = require('./routes/hubs');
 const notificationRoute = require('./routes/notifications');
 const messageRoute = require('./routes/messages');
 const socialRoute = require('./routes/social');
+const adminRoute = require('./routes/admin'); // YENİ: Admin Paneli Rotası
 
 const app = express();
 
@@ -46,6 +47,7 @@ app.use('/api/hubs', hubRoute);
 app.use('/api/notifications', notificationRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/social', socialRoute);
+app.use('/api/admin', adminRoute); // YENİ: Admin Rotası Kullanıma Alındı
 
 // --- YENİ: SOCKET.IO GERÇEK ZAMANLI OLAY YÖNETİCİSİ ---
 

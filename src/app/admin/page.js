@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 export default function AdminPage() {
   const router = useRouter();
   
-  // --- GÜVENLİK (TANRI MODU KİLİDİ) ---
+  // --- GÜVENLİK (TANRI MODU KİLİDİ - YENİLENMİŞ GÜVENLİ SÜRÜM) ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passkey, setPasskey] = useState("");
   const [authError, setAuthError] = useState(false);
-  const SECRET_PASSKEY = "1453Alp1."; // Kurucu Şifresi (Burayı dilediğin gibi değiştir)
+  // DİKKAT: SECRET_PASSKEY değişkeni güvenlik sebebiyle kaldırıldı. 
+  // Şifre kontrolü artık güvenli Backend (.env) üzerinden yapılıyor!
 
   // --- TEMEL DURUMLAR ---
   const [user, setUser] = useState(null);
@@ -28,6 +29,15 @@ export default function AdminPage() {
     icon: "🔥"
   });
   const [isCreating, setIsCreating] = useState(false);
+
+  // --- YENİ: KULLANICI ARAMA VE DÜZENLEME (TANRI MODU MOTORU) ---
+  const [searchedEmail, setSearchedEmail] = useState("");
+  const [foundUser, setFoundUser] = useState(null);
+  const [searchError, setSearchError] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [editRoles, setEditRoles] = useState([]);
+  const [editKarma, setEditKarma] = useState(0);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   useEffect(() => {
     const fetchAdminData = async () => {
@@ -63,15 +73,27 @@ export default function AdminPage() {
     fetchAdminData();
   }, [router]);
 
-  // --- ŞİFRE KONTROL MOTORU ---
-  const handleAuth = (e) => {
+  // --- ŞİFRE KONTROL MOTORU (ARTIK GÜVENLİ BACKEND'E BAĞLI) ---
+  const handleAuth = async (e) => {
     e.preventDefault();
-    if (passkey === SECRET_PASSKEY) {
-      setIsAuthenticated(true);
-      setAuthError(false);
-    } else {
-      setAuthError(true);
-      setPasskey("");
+    try {
+      const res = await fetch("https://sinerjihub-1.onrender.com/api/admin/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: passkey })
+      });
+      const data = await res.json();
+      
+      if (res.ok && data.success) {
+        setIsAuthenticated(true);
+        setAuthError(false);
+        // passkey state içinde tutulmaya devam ediyor, çünkü backend isteklerinde (Arama/Güncelleme) header olarak göndereceğiz.
+      } else {
+        setAuthError(true);
+        setPasskey("");
+      }
+    } catch (err) {
+      alert("Sunucuya bağlanılamadı. Backend rotalarını kontrol et dostum.");
     }
   };
 
@@ -98,6 +120,72 @@ export default function AdminPage() {
       alert("Bağlantı hatası! Backend API'sinde '/api/hubs/create' rotasının açık olduğundan emin ol.");
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  // --- YENİ EKLENEN: KULLANICI ARAMA FONKSİYONU ---
+  const handleSearchUser = async (e) => {
+    e.preventDefault();
+    setIsSearching(true);
+    setSearchError("");
+    setFoundUser(null);
+    try {
+      const res = await fetch("https://sinerjihub-1.onrender.com/api/admin/search-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": passkey // Güvenlik katmanı
+        },
+        body: JSON.stringify({ email: searchedEmail })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setFoundUser(data);
+        setEditKarma(data.karmaPoints || 0);
+        setEditRoles(data.roles || ["Gezgin"]);
+      } else {
+        setSearchError(data.message);
+      }
+    } catch (err) {
+      setSearchError("Ağ hatası, sorgulama başarısız.");
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // --- YENİ EKLENEN: KULLANICI GÜNCELLEME (RÜTBE VE PUAN) FONKSİYONU ---
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/admin/update-user/${foundUser._id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-admin-password": passkey // Güvenlik katmanı
+        },
+        body: JSON.stringify({ roles: editRoles, karmaPoints: Number(editKarma) })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert("Sistem Mesajı: Kullanıcı başarıyla güncellendi! Yüce Kurucu gücünü gösterdi. ⚡");
+        setFoundUser(data.user);
+      } else {
+        alert(data.message || "Güncelleme başarısız.");
+      }
+    } catch (err) {
+      alert("Sistem bağlantı hatası!");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // Rütbe Butonları için Seçim Algoritması
+  const toggleRole = (role) => {
+    if (editRoles.includes(role)) {
+      setEditRoles(editRoles.filter(r => r !== role)); // Varsa çıkar
+    } else {
+      setEditRoles([...editRoles, role]); // Yoksa ekle
     }
   };
 
@@ -194,6 +282,92 @@ export default function AdminPage() {
               <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span> AKTİF
             </p>
           </div>
+        </div>
+
+        {/* --- YENİ EKLENEN: GEZGİN SORGULAMA VE YETKİLENDİRME PANELİ --- */}
+        <div className="bg-[#0a0a0a] border border-red-900/40 p-8 md:p-10 rounded-[2.5rem] shadow-2xl mb-12 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-red-600/5 rounded-full blur-3xl -z-10 pointer-events-none"></div>
+          <h3 className="text-xl font-black mb-6 tracking-tight text-gray-200 border-b border-red-900/30 pb-4 flex items-center gap-3">
+            <span>🔍</span> GEZGİN SORGULAMA VE YETKİLENDİRME
+          </h3>
+          
+          <form onSubmit={handleSearchUser} className="flex flex-col md:flex-row gap-4 mb-8 relative z-10">
+            <input
+              type="email"
+              required
+              value={searchedEmail}
+              onChange={(e) => setSearchedEmail(e.target.value)}
+              className="flex-1 bg-gray-900/50 border border-gray-800 rounded-2xl px-5 py-4 text-sm text-white outline-none focus:border-red-500/50 transition-all"
+              placeholder="Kullanıcı e-posta adresini gir (Örn: admin@sinerjihub.com)"
+            />
+            <button
+              type="submit"
+              disabled={isSearching}
+              className="bg-red-600 hover:bg-red-500 text-white font-black px-8 py-4 rounded-2xl uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(220,38,38,0.3)] active:scale-95 disabled:opacity-50"
+            >
+              {isSearching ? "Aranıyor..." : "Gezgini Bul"}
+            </button>
+          </form>
+
+          {searchError && <p className="text-red-500 text-xs font-bold uppercase tracking-widest mb-4">{searchError}</p>}
+
+          {foundUser && (
+            <div className="bg-gray-900/50 border border-red-900/30 rounded-2xl p-6 animate-in fade-in slide-in-from-top-4 relative z-10">
+              <div className="flex items-center gap-6 mb-8 border-b border-gray-800 pb-6">
+                <div className="w-16 h-16 bg-red-600/20 text-red-500 rounded-full flex items-center justify-center font-black text-2xl border border-red-500/30 overflow-hidden">
+                  {foundUser.profilePicture ? <img src={foundUser.profilePicture} className="w-full h-full object-cover" /> : foundUser.username[0].toUpperCase()}
+                </div>
+                <div>
+                  <h4 className="text-2xl font-black uppercase tracking-tighter text-white">{foundUser.username}</h4>
+                  <p className="text-gray-500 text-xs font-bold tracking-widest">{foundUser.email}</p>
+                </div>
+              </div>
+
+              <form onSubmit={handleUpdateUser} className="space-y-6">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 ml-2">Sinerji (Karma) Puanı</label>
+                  <input
+                    type="number"
+                    required
+                    value={editKarma}
+                    onChange={(e) => setEditKarma(e.target.value)}
+                    className="w-full md:w-1/3 bg-[#050505] border border-gray-800 rounded-xl px-5 py-3 text-lg font-black text-red-400 outline-none focus:border-red-500/50 transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-3 ml-2">Özel Rütbeler (Taglar)</label>
+                  <div className="flex flex-wrap gap-3">
+                    {["Gezgin", "Kurucu", "Moderatör", "Gamer", "Kemik Tayfa"].map(role => {
+                      const isActive = editRoles.includes(role);
+                      return (
+                        <button
+                          key={role}
+                          type="button"
+                          onClick={() => toggleRole(role)}
+                          className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all border ${
+                            isActive 
+                              ? "bg-red-600/20 border-red-500 text-red-400 shadow-[0_0_10px_rgba(220,38,38,0.2)]" 
+                              : "bg-gray-800 border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-300"
+                          }`}
+                        >
+                          {role} {isActive && "✓"}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="w-full md:w-auto bg-green-600 hover:bg-green-500 text-white font-black px-8 py-4 rounded-xl uppercase tracking-widest text-xs transition-all shadow-[0_0_15px_rgba(22,163,74,0.3)] active:scale-95 disabled:opacity-50 mt-4"
+                >
+                  {isUpdating ? "Sisteme Yazılıyor..." : "Değişiklikleri Sisteme Yaz"}
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">

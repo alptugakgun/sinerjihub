@@ -16,9 +16,10 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  // ADMİN PANELİNDEN YÖNETİLECEK RÜTBELER (Örn: Kurucu, Moderatör, Gamer)
   roles: {
     type: [String],
-    default: []
+    default: ["Gezgin"] 
   },
   interests: {
     type: [String],
