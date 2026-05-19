@@ -16,6 +16,17 @@ const UserSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+  
+  bio: { 
+    type: String, 
+    default: "SinerjiHub ekosisteminde yeni bir gezgin." 
+  },
+  socialLinks: {
+    github: { type: String, default: "" },
+    linkedin: { type: String, default: "" },
+    website: { type: String, default: "" }
+  },
+  
   // ADMİN PANELİNDEN YÖNETİLECEK RÜTBELER (Örn: Kurucu, Moderatör, Gamer)
   roles: {
     type: [String],

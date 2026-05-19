@@ -41,6 +41,20 @@ const HubSchema = new mongoose.Schema({
     ref: 'User',
     default: null
   },
+
+  // --- YENİ EKLENEN: KABİLE MESAJ ARŞİVİ (HUB MESSAGE PERSISTENCE) ---
+  // Odada dönen tüm Sinerji sohbetlerini kalıcı olarak bu dizide saklayacağız.
+  messages: [
+    {
+      senderId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      username: { type: String },
+      content: { type: String },
+      attachment: { type: String }, // Base64 dosya formatı
+      attachmentName: { type: String },
+      attachmentType: { type: String },
+      createdAt: { type: Date, default: Date.now }
+    }
+  ],
   
   createdAt: {
     type: Date,

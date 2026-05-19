@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Toaster, toast } from "react-hot-toast";
+import Cookies from "js-cookie"; // YENİ: Çerez yöneticisi
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,9 +11,10 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sayfa yüklendiğinde eski/bozuk ID varsa hafızayı temizle ki döngüye girmesin
+  // Sayfa yüklendiğinde eski/bozuk ID varsa hafızayı ve çerezleri temizle ki döngüye girmesin
   useEffect(() => {
     localStorage.removeItem("userId");
+    Cookies.remove("token"); // YENİ: Eski şifreli bileti yırt at
   }, []);
 
   const handleLogin = async (e) => {
@@ -31,8 +33,12 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        // İŞTE BÜTÜN SORUNU ÇÖZEN O KRİTİK SATIR! (data.id değil, data._id)
-        localStorage.setItem("userId", data._id);
+        // --- YENİ EKLENEN: BİLGİLERİ VE TOKENI KAYDET ---
+        // data.user._id (Eskiden sadece data._id idi, çünkü backend artık {user, token} dönüyor)
+        localStorage.setItem("userId", data.user._id);
+        
+        // Middleware'in okuyabilmesi için Token'ı tarayıcı çerezlerine 7 günlük yazıyoruz
+        Cookies.set("token", data.token, { expires: 7, secure: true });
         
         toast.success("SinerjiHub'a hoş geldin! Yönlendiriliyorsun...", {
           style: { background: '#1f2937', color: '#fff', border: '1px solid #374151' }

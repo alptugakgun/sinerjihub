@@ -13,8 +13,11 @@ const hubRoute = require('./routes/hubs');
 const notificationRoute = require('./routes/notifications');
 const messageRoute = require('./routes/messages');
 const socialRoute = require('./routes/social');
-const adminRoute = require('./routes/admin'); // YENİ: Admin Paneli Rotası
-const feedbackRoute = require('./routes/feedback'); // YENİ: Geri Bildirim Rotası
+const adminRoute = require('./routes/admin'); // Admin Paneli Rotası
+const feedbackRoute = require('./routes/feedback'); // Geri Bildirim Rotası
+
+// YENİ EKLENEN: Kabile veritabanı modelini sunucuya çağırıyoruz
+const Hub = require('./models/Hub'); 
 
 const app = express();
 
@@ -48,8 +51,8 @@ app.use('/api/hubs', hubRoute);
 app.use('/api/notifications', notificationRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/social', socialRoute);
-app.use('/api/admin', adminRoute); // YENİ: Admin Rotası Kullanıma Alındı
-app.use('/api/feedback', feedbackRoute); // YENİ: Geri Bildirim Rotası Kullanıma Alındı
+app.use('/api/admin', adminRoute); // Admin Rotası Kullanıma Alındı
+app.use('/api/feedback', feedbackRoute); // Geri Bildirim Rotası Kullanıma Alındı
 
 // --- YENİ: SOCKET.IO GERÇEK ZAMANLI OLAY YÖNETİCİSİ ---
 
@@ -100,7 +103,8 @@ io.on("connection", (socket) => {
   });
 
   // 3. Kabile (Hub) Odasına Mesaj Gönderildiğinde
-  socket.on("sendHubMessage", (data) => {
+  // DİKKAT: Artık bu işlem veritabanı (async) kaydı barındırıyor!
+  socket.on("sendHubMessage", async (data) => {
     // Mesajı o odaya bağlı olan diğer herkese anlık gönder (Dosya bilgilerini de içerecek şekilde)
     socket.broadcast.to(data.hubId).emit("getHubMessage", {
       user: data.senderId,
@@ -111,6 +115,26 @@ io.on("connection", (socket) => {
       attachmentType: data.attachmentType,
       createdAt: Date.now()
     });
+
+    // --- YENİ EKLENEN: MESAJI VERİTABANINA (ARŞİVE) KAYDET ---
+    try {
+      await Hub.findByIdAndUpdate(data.hubId, {
+        $push: {
+          messages: {
+            senderId: data.senderId,
+            username: data.username,
+            content: data.content,
+            attachment: data.attachment,
+            attachmentName: data.attachmentName,
+            attachmentType: data.attachmentType,
+            createdAt: Date.now()
+          }
+        }
+      });
+      console.log(`💾 Mesaj Kabile ${data.hubId} arşivine kalıcı olarak işlendi.`);
+    } catch (err) {
+      console.error("Mesaj Kabile arşivine kaydedilirken hata oluştu:", err);
+    }
   });
 
   // 4. Kabile Odasına (Room) Katılma Olayı

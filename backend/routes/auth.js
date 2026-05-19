@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken'); // YENİ: Şifreleme motoru
 const User = require('../models/User');
 
 // --- 1. KULLANICI KAYDI (REGISTER) ---
@@ -44,7 +45,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-// --- 2. KULLANICI GİRİŞİ (LOGIN) ---
+// --- 2. KULLANICI GİRİŞİ VE GÜVENLİK BİLETİ (LOGIN & JWT) ---
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -59,7 +60,26 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: "Hatalı şifre girdin dostum." });
     }
 
-    res.status(200).json(user);
+    // --- YENİ EKLENEN: GÜVENLİK KALKANI (JWT TOKEN ÜRETİMİ) ---
+    // Kullanıcıya, içinde rütbelerini barındıran kırılmaz bir bilet veriyoruz.
+    // Eğer .env içinde JWT_SECRET yoksa, geçici bir güvenlik anahtarı kullanılır.
+    const tokenSecret = process.env.JWT_SECRET || "SinerjiHubKurucuAnahtari123";
+    const token = jwt.sign(
+      { id: user._id, roles: user.roles }, 
+      tokenSecret, 
+      { expiresIn: "7d" } // Token 7 gün boyunca geçerli olacak
+    );
+
+    // Token'ı httpOnly çerez olarak ayarlayarak XSS saldırılarını önle
+    res.cookie('token', token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 gün
+    });
+
+    // Kullanıcı bilgisini ve token'ı frontende gönder (Frontend de çerezi kuracak)
+    res.status(200).json({ user, token });
   } catch (err) {
     res.status(500).json({ message: "Giriş yapılırken bir hata oluştu.", error: err.message });
   }
@@ -117,6 +137,23 @@ router.get('/recommendations/:id', async (req, res) => {
     res.status(200).json(recommendedUsers);
   } catch (err) {
     res.status(500).json({ message: "Sinerji radarı çalıştırılamadı.", error: err.message });
+  }
+});
+
+// --- 6. PROFİL BİLGİLERİNİ GÜNCELLEME (BİO VE SOSYAL MEDYA) ---
+router.put('/update-profile/:id', async (req, res) => {
+  try {
+    const { bio, socialLinks, interests } = req.body;
+    
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { $set: { bio, socialLinks, interests } },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({ message: "Profil başarıyla güncellendi!", user: updatedUser });
+  } catch (err) {
+    res.status(500).json({ message: "Profil güncellenemedi.", error: err.message });
   }
 });
 

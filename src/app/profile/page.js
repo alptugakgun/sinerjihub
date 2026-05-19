@@ -14,10 +14,21 @@ export default function ProfilePage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
 
-  // --- YENİ EKLENEN: GERİ BİLDİRİM (FEEDBACK) DURUMLARI ---
+  // --- GERİ BİLDİRİM (FEEDBACK) DURUMLARI ---
   const [feedbackContent, setFeedbackContent] = useState("");
   const [feedbackType, setFeedbackType] = useState("Öneri");
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+  // --- YENİ EKLENEN: PROFİL DÜZENLEME DURUMLARI ---
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [editForm, setEditForm] = useState({
+    bio: "",
+    github: "",
+    linkedin: "",
+    website: "",
+    interests: "" // Virgülle ayrılmış string olarak tutacağız
+  });
 
   // --- PROFİL VE PORTFOLYO VERİ MOTORU ---
   useEffect(() => {
@@ -33,6 +44,14 @@ export default function ProfilePage() {
         if (userRes.ok) {
           const userData = await userRes.json();
           setUser(userData);
+          // Edit formunu kullanıcının mevcut verileriyle doldur
+          setEditForm({
+            bio: userData.bio || "",
+            github: userData.socialLinks?.github || "",
+            linkedin: userData.socialLinks?.linkedin || "",
+            website: userData.socialLinks?.website || "",
+            interests: userData.interests?.join(", ") || ""
+          });
         } else {
           localStorage.removeItem("userId");
           router.push("/login");
@@ -62,7 +81,6 @@ export default function ProfilePage() {
         }
 
       } catch (error) {
-        console.error("Profil verisi çekilemedi:", error);
         toast.error("Profil verileri çekilemedi.", { style: { background: '#7f1d1d', color: '#fff' } });
       } finally {
         setIsLoading(false);
@@ -104,17 +122,57 @@ export default function ProfilePage() {
           toast.success("Profil fotoğrafın başarıyla güncellendi! 🎉", { style: { background: '#1f2937', color: '#fff' } });
           setUser({ ...user, profilePicture: base64Image });
         } else {
-          toast.error(data.message || "Fotoğraf yüklenemedi.", { style: { background: '#7f1d1d', color: '#fff' } });
+          toast.error(data.message || "Fotoğraf yüklenemedi.");
         }
       } catch (err) {
-        toast.error("Sunucuyla bağlantı hatası oluştu.", { style: { background: '#7f1d1d', color: '#fff' } });
+        toast.error("Sunucuyla bağlantı hatası oluştu.");
       } finally {
         setIsUploading(false);
       }
     };
   };
 
-  // --- YENİ EKLENEN: GERİ BİLDİRİM GÖNDERME FONKSİYONU ---
+  // --- YENİ EKLENEN: PROFİL BİLGİLERİNİ GÜNCELLEME MANTIK MOTORU ---
+  const handleProfileUpdate = async (e) => {
+    e.preventDefault();
+    setIsUpdatingProfile(true);
+    const userId = localStorage.getItem("userId");
+
+    // Virgülle ayrılmış interests alanını diziye çevir
+    const interestsArray = editForm.interests.split(",").map(i => i.trim()).filter(i => i !== "");
+
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/update-profile/${userId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bio: editForm.bio,
+          socialLinks: {
+            github: editForm.github,
+            linkedin: editForm.linkedin,
+            website: editForm.website
+          },
+          interests: interestsArray
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        toast.success("Profilin başarıyla güncellendi! 🚀");
+        setUser(data.user);
+        setIsEditModalOpen(false);
+      } else {
+        toast.error(data.message || "Güncelleme başarısız.");
+      }
+    } catch (err) {
+      toast.error("Sunucu bağlantı hatası.");
+    } finally {
+      setIsUpdatingProfile(false);
+    }
+  };
+
+  // --- GERİ BİLDİRİM GÖNDERME FONKSİYONU ---
   const handleFeedbackSubmit = async (e) => {
     e.preventDefault();
     if (!feedbackContent.trim()) return;
@@ -134,17 +192,13 @@ export default function ProfilePage() {
         }),
       });
 
-      const data = await res.json();
-
       if (res.ok) {
-        toast.success("Mesajın kuruculara iletildi! Katkın için teşekkürler. 🚀", { style: { background: '#1f2937', color: '#fff' } });
+        toast.success("Mesajın kuruculara iletildi! Katkın için teşekkürler. 🚀");
         setFeedbackContent("");
         setFeedbackType("Öneri");
-      } else {
-        toast.error(data.message || "Geri bildirim iletilemedi.", { style: { background: '#7f1d1d', color: '#fff' } });
       }
     } catch (err) {
-      toast.error("Bağlantı hatası! Sisteme ulaşılamıyor.", { style: { background: '#7f1d1d', color: '#fff' } });
+      toast.error("Bağlantı hatası! Sisteme ulaşılamıyor.");
     } finally {
       setIsSubmittingFeedback(false);
     }
@@ -179,6 +233,62 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-[#0a0f1c] text-white font-sans selection:bg-indigo-500/30 relative overflow-hidden pb-20 md:pb-0">
       <Toaster position="top-center" reverseOrder={false} />
 
+      {/* --- PROFİL DÜZENLEME MODALI --- */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-[2.5rem] p-8 w-full max-w-xl shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="text-2xl font-black mb-6 tracking-tight text-white">Profilini Şekillendir 🛠️</h3>
+            
+            <form onSubmit={handleProfileUpdate} className="space-y-5">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Hakkımda (Bio)</label>
+                <textarea 
+                  value={editForm.bio} 
+                  onChange={(e) => setEditForm({...editForm, bio: e.target.value})} 
+                  className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500 h-24 resize-none" 
+                  placeholder="Kısaca kendinden bahset..." 
+                />
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">İlgi Alanları (Virgülle ayır)</label>
+                <input 
+                  type="text" 
+                  value={editForm.interests} 
+                  onChange={(e) => setEditForm({...editForm, interests: e.target.value})} 
+                  className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500" 
+                  placeholder="Yazılım, Kimya, Tasarım..." 
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">GitHub URL</label>
+                  <input type="text" value={editForm.github} onChange={(e) => setEditForm({...editForm, github: e.target.value})} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500" placeholder="https://github.com/..." />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">LinkedIn URL</label>
+                  <input type="text" value={editForm.linkedin} onChange={(e) => setEditForm({...editForm, linkedin: e.target.value})} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500" placeholder="https://linkedin.com/in/..." />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2">Kişisel Web Sitesi</label>
+                  <input type="text" value={editForm.website} onChange={(e) => setEditForm({...editForm, website: e.target.value})} className="w-full bg-gray-800/50 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-indigo-500" placeholder="https://..." />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button type="submit" disabled={isUpdatingProfile} className="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">
+                  {isUpdatingProfile ? "GÜNCELLENİYOR..." : "KAYDET"}
+                </button>
+                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-6 bg-gray-800 hover:bg-gray-700 text-gray-300 py-4 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all">
+                  İPTAL
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="absolute top-0 left-0 w-full h-96 bg-gradient-to-b from-indigo-900/40 to-transparent -z-10"></div>
       <div className="absolute -top-40 -right-40 w-96 h-96 bg-purple-600/10 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
 
@@ -187,9 +297,14 @@ export default function ProfilePage() {
           <span className="w-10 h-10 bg-gray-800 border border-gray-700 rounded-full flex items-center justify-center group-hover:-translate-x-1 transition-transform">←</span>
           <span className="text-[10px] font-black uppercase tracking-widest">Ana Üsse Dön</span>
         </Link>
-        <button onClick={handleLogout} className="text-red-500 hover:text-red-400 text-[10px] font-black uppercase tracking-widest bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-xl transition-all">
-          Sistemden Çık
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setIsEditModalOpen(true)} className="text-indigo-400 hover:text-indigo-300 text-[10px] font-black uppercase tracking-widest bg-indigo-500/10 border border-indigo-500/20 px-4 py-2 rounded-xl transition-all">
+            Profili Düzenle
+          </button>
+          <button onClick={handleLogout} className="text-red-500 hover:text-red-400 text-[10px] font-black uppercase tracking-widest bg-red-500/10 border border-red-500/20 px-4 py-2 rounded-xl transition-all">
+            Sistemden Çık
+          </button>
+        </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-6 md:px-8 flex flex-col xl:flex-row gap-12 relative z-10 mt-4">
@@ -213,7 +328,18 @@ export default function ProfilePage() {
             </div>
             
             <h1 className="text-3xl font-black tracking-tighter uppercase mb-1">{user?.username}</h1>
-            <p className="text-gray-400 text-xs font-medium tracking-widest mb-6">{user?.email}</p>
+            <p className="text-gray-400 text-xs font-medium tracking-widest mb-4">{user?.email}</p>
+
+            {/* --- YENİ EKLENEN: BİO VE SOSYAL MEDYA LİNKLERİ --- */}
+            {user?.bio && (
+              <p className="text-sm text-gray-300 font-medium italic mb-5 px-2">"{user.bio}"</p>
+            )}
+
+            <div className="flex justify-center gap-3 mb-6">
+              {user?.socialLinks?.github && <a href={user.socialLinks.github} target="_blank" className="w-8 h-8 bg-gray-900 border border-gray-700 rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:border-gray-500 transition-all text-xs" title="GitHub">GH</a>}
+              {user?.socialLinks?.linkedin && <a href={user.socialLinks.linkedin} target="_blank" className="w-8 h-8 bg-blue-900 border border-blue-700 rounded-full flex items-center justify-center text-blue-400 hover:text-white hover:border-blue-500 transition-all text-xs" title="LinkedIn">IN</a>}
+              {user?.socialLinks?.website && <a href={user.socialLinks.website} target="_blank" className="w-8 h-8 bg-green-900 border border-green-700 rounded-full flex items-center justify-center text-green-400 hover:text-white hover:border-green-500 transition-all text-xs" title="Website">🌐</a>}
+            </div>
 
             <div className={`flex flex-col items-center gap-2 ${userRank.bg} border ${userRank.border} p-4 rounded-2xl mb-8`}>
               <span className="text-4xl mb-2">{userRank.icon}</span>
@@ -234,11 +360,15 @@ export default function ProfilePage() {
           <div className="bg-gray-800/40 backdrop-blur-xl border border-gray-700/50 rounded-[2.5rem] p-8">
             <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 mb-6 flex items-center gap-2"><span>🚀</span> İLGİ ALANLARI & YETENEKLER</h3>
             <div className="flex flex-wrap gap-2">
-              {userSkills.length === 0 ? (
-                <p className="text-[10px] text-gray-600 font-medium italic">Henüz bir yetenek sinyali bırakmadın. İlanlarında etiket kullan!</p>
+              {user?.interests?.length > 0 ? (
+                user.interests.map((skill, idx) => (
+                  <span key={idx} className="bg-indigo-900/30 border border-indigo-500/30 text-indigo-300 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest uppercase">#{skill}</span>
+                ))
+              ) : userSkills.length === 0 ? (
+                <p className="text-[10px] text-gray-600 font-medium italic">Henüz bir yetenek sinyali bırakmadın. Profilini düzenle veya ilanlarında etiket kullan!</p>
               ) : (
                 userSkills.map((skill, idx) => (
-                  <span key={idx} className="bg-gray-900 border border-gray-700 text-gray-300 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest">#{skill}</span>
+                  <span key={idx} className="bg-gray-900 border border-gray-700 text-gray-300 px-4 py-2 rounded-xl text-[10px] font-black tracking-widest uppercase">#{skill}</span>
                 ))
               )}
             </div>
@@ -291,7 +421,7 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          {/* --- YENİ EKLENEN: İSTEK VE ÖNERİ (GERİ BİLDİRİM) KUTUSU --- */}
+          {/* GERİ BİLDİRİM KUTUSU */}
           <div className="bg-indigo-900/10 border border-indigo-500/30 p-8 rounded-[2.5rem] relative overflow-hidden">
             <div className="absolute right-0 bottom-0 text-[120px] opacity-5">📬</div>
             <h3 className="text-lg font-black tracking-tight italic text-indigo-300 flex items-center gap-3 mb-2 relative z-10">EKOSİSTEMİ ŞEKİLLENDİR</h3>

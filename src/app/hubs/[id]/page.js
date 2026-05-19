@@ -5,12 +5,34 @@ import { useParams, useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import { Toaster, toast } from "react-hot-toast";
 
+// --- YARDIMCI BİLEŞEN: DİĞER KULLANICILARIN (REMOTE) VİDEO OYNATICISI ---
+const RemoteVideo = ({ stream, peerId }) => {
+  const videoRef = useRef(null);
+  
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+    <div className="w-full min-w-[280px] max-w-sm bg-black border-2 border-purple-500/30 rounded-[2.5rem] p-1.5 relative overflow-hidden aspect-video shadow-[0_30px_60px_-15px_rgba(0,0,0,0.7)] animate-in fade-in zoom-in duration-500">
+      <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover rounded-[2.2rem] transform scale-x-[-1] shadow-inner" />
+      <div className="absolute bottom-5 left-5 bg-black/60 backdrop-blur-xl border border-gray-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center gap-2">
+        <span className="w-2 h-2 bg-purple-500 rounded-full animate-pulse"></span> GEZGİN
+      </div>
+    </div>
+  );
+};
+
 export default function HubRoomPage() {
   const params = useParams();
   const router = useRouter();
   const hubId = params.id;
 
   const socket = useRef();
+  const peerInstance = useRef(null);
+  const callsRef = useRef({});
   const localVideoRef = useRef(null);
   const messagesEndRef = useRef(null);
 
@@ -29,47 +51,36 @@ export default function HubRoomPage() {
 
   // --- MEDYA VE GERÇEK ZAMANLI İLETİŞİM DURUMLARI ---
   const [localStream, setLocalStream] = useState(null);
+  const [remoteStreams, setRemoteStreams] = useState([]); // Diğer kameraları tutacağımız dizi
   const [isMuted, setIsMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [activeVoiceMembers, setActiveVoiceMembers] = useState([]);
 
   // --- 1. ARKA PLAN MOTORU VE SOCKET LISTENERS ---
   useEffect(() => {
-    // Sunucu bağlantısı kuruluyor
     socket.current = io("https://sinerjihub-1.onrender.com");
 
-    // Canlı Kabile Odasına Gelen Mesajları Yakala
     socket.current.on("getHubMessage", (data) => {
       setMessages((prev) => [...prev, data]);
       setTimeout(() => scrollToBottom(), 100);
     });
 
-    // Canlı Ses/Video Odasına Biri Katıldığında
+    // Biri kamerayı açtığında sinyal gelir, PeerJS ile onu ararız (Call)
     socket.current.on("user-connected-voice", (peerId) => {
-      setActiveVoiceMembers((prev) => {
-        if (!prev.includes(peerId)) {
-          toast.success("🎙️ Canlı ağa yeni bir gezgin katıldı!", {
-            style: { borderRadius: '1rem', background: '#1e1b4b', color: '#fff', fontSize: '12px', fontWeight: 'bold' }
-          });
-          return [...prev, peerId];
-        }
-        return prev;
+      toast.success("🎙️ Canlı ağa yeni bir gezgin katıldı!", {
+        style: { borderRadius: '1rem', background: '#1e1b4b', color: '#fff', fontSize: '12px', fontWeight: 'bold' }
       });
-    });
-
-    // Canlı Ses/Video Odasından Biri Çıktığında
-    socket.current.on("user-disconnected-voice", (peerId) => {
-      setActiveVoiceMembers((prev) => prev.filter((id) => id !== peerId));
-      toast.error("🔌 Bir gezgin canlı ağdan ayrıldı.");
+      
+      if (localStream && peerInstance.current) {
+        connectToNewUser(peerId, localStream);
+      }
     });
 
     return () => {
-      if (socket.current) {
-        socket.current.disconnect();
-      }
+      if (socket.current) socket.current.disconnect();
+      if (peerInstance.current) peerInstance.current.destroy();
     };
-  }, []);
+  }, [localStream]);
 
   // --- 2. VERİ ÇEKME VE ODAYA GİRİŞ ETKİSİ ---
   useEffect(() => {
@@ -81,7 +92,6 @@ export default function HubRoomPage() {
       }
 
       try {
-        // A. Kullanıcı Profil Bilgisi
         const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
         const userData = await userRes.json();
         if (userRes.ok) {
@@ -91,19 +101,15 @@ export default function HubRoomPage() {
           return;
         }
 
-        // B. Tüm Kabileleri Çek ve Bu Odayı Bul
         const hubRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/all`);
         const allHubs = await hubRes.json();
         const currentHub = allHubs.find((h) => h._id === hubId);
         
         if (currentHub) {
           setHub(currentHub);
-          
-          // C. Socket Odasına Abone Ol
           socket.current.emit("joinHubRoom", hubId);
           socket.current.emit("newUser", userId);
 
-          // D. Varsa Odanın Eski Mesaj Geçmişini Yükle
           if (currentHub.messages) {
             setMessages(currentHub.messages);
           }
@@ -113,7 +119,6 @@ export default function HubRoomPage() {
           router.push("/dashboard");
         }
       } catch (err) {
-        console.error("Veri çekme hatası:", err);
         toast.error("Bağlantı hatası!");
       } finally {
         setIsLoading(false);
@@ -132,7 +137,6 @@ export default function HubRoomPage() {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Boyut Kontrolü (5MB Limit)
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Dosya boyutu çok büyük! Maksimum 5MB fırlatabilirsin.", {
         style: { background: '#7f1d1d', color: '#fff' }
@@ -153,11 +157,10 @@ export default function HubRoomPage() {
     };
   };
 
-  // --- 4. WEBRTC CANLI MEDYA BAĞLANTI MOTORLARI ---
-  
-  // Kamera ve Mikrofon Başlat
+  // --- 4. PEERJS VE WEBRTC CANLI MEDYA BAĞLANTI MOTORLARI ---
   const handleStartVoiceNetwork = async () => {
     try {
+      // 1. Tarayıcıdan Kamera ve Mikrofonu Çek
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
@@ -169,12 +172,67 @@ export default function HubRoomPage() {
         localVideoRef.current.srcObject = stream;
       }
 
-      socket.current.emit("join-voice-room", { hubId, peerId: user?._id });
-      toast.success("⚡ Sinerji Canlı İletişim Ağı Aktif! Kamera açıldı.");
+      // 2. Next.js ile PeerJS'i Dinamik Olarak İçe Aktar (Hata almamak için)
+      const { default: Peer } = await import("peerjs");
+      
+      // 3. Yeni bir Peer objesi oluştur
+      const peer = new Peer(); 
+      peerInstance.current = peer;
+
+      // 4. Peer sunucusuna bağlandığında Soket üzerinden odadakilere ID'ni fırlat
+      peer.on("open", (id) => {
+        socket.current.emit("join-voice-room", { hubId, peerId: id });
+        toast.success("⚡ Sinerji Canlı İletişim Ağı Aktif! Kamera açıldı.");
+      });
+
+      // 5. Biri Seni Aradığında (Çağrı Geldiğinde) Cevap Ver
+      peer.on("call", (call) => {
+        call.answer(stream); // Kendi stream'ini karşıya gönder
+        call.on("stream", (userVideoStream) => {
+          // Karşı tarafın stream'ini arayüze ekle
+          addRemoteStream(call.peer, userVideoStream);
+        });
+        
+        call.on("close", () => {
+          removeRemoteStream(call.peer);
+        });
+        
+        callsRef.current[call.peer] = call;
+      });
+
     } catch (err) {
-      console.error("Medya erişim hatası:", err);
       toast.error("Kamera izni alınamadı! Lütfen adres çubuğundaki kilit (🔒) simgesinden izin ver dostum.");
     }
+  };
+
+  // Yeni Bağlanan Kişiyi Arama (Call) Fonksiyonu
+  const connectToNewUser = (peerId, stream) => {
+    if (!peerInstance.current) return;
+    
+    const call = peerInstance.current.call(peerId, stream);
+    
+    call.on("stream", (userVideoStream) => {
+      addRemoteStream(peerId, userVideoStream);
+    });
+    
+    call.on("close", () => {
+      removeRemoteStream(peerId);
+    });
+
+    callsRef.current[peerId] = call;
+  };
+
+  // State'e Güvenli Şekilde Yeni Kamera Ekleyen Yardımcı Fonksiyon
+  const addRemoteStream = (peerId, stream) => {
+    setRemoteStreams((prev) => {
+      if (prev.some((s) => s.peerId === peerId)) return prev;
+      return [...prev, { peerId, stream }];
+    });
+  };
+
+  // Çıkan Kişinin Kamerasını Kaldıran Yardımcı Fonksiyon
+  const removeRemoteStream = (peerId) => {
+    setRemoteStreams((prev) => prev.filter((s) => s.peerId !== peerId));
   };
 
   // Ekran Paylaşımı Başlat
@@ -188,7 +246,6 @@ export default function HubRoomPage() {
       
       setIsScreenSharing(true);
       
-      // Ekran paylaşımı bittiğinde kameraya geri dön
       screenStream.getVideoTracks()[0].onended = () => {
         if (localStream && localVideoRef.current) {
           localVideoRef.current.srcObject = localStream;
@@ -234,13 +291,9 @@ export default function HubRoomPage() {
       attachmentType,
     };
 
-    // Socket üzerinden odadaki herkese anlık fırlatıyoruz
     socket.current.emit("sendHubMessage", msgData);
-    
-    // Kendi ekranımıza ekliyoruz
     setMessages((prev) => [...prev, { ...msgData, createdAt: Date.now(), user: user?._id }]);
     
-    // Giriş alanlarını temizle
     setTextInput("");
     setAttachment("");
     setAttachmentName("");
@@ -279,15 +332,14 @@ export default function HubRoomPage() {
           <p className="text-[11px] text-gray-500 mt-5 leading-relaxed font-medium px-2">{hub?.description}</p>
         </div>
 
-        {/* KABİLE ÜYELERİ (IMAGE_FADBEE HİYERARŞİSİ) */}
+        {/* KABİLE ÜYELERİ LİSTESİ */}
         <div className="flex-1 flex flex-col min-h-[250px]">
           <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em] mb-6 px-2 flex justify-between items-center border-b border-gray-800 pb-3">
             <span>KABİLE ÜYELERİ</span>
-            <span className="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-md text-[8px]">{hub?.members?.length || 2}</span>
+            <span className="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-md text-[8px]">{hub?.members?.length || 1}</span>
           </h3>
           
           <div className="space-y-3 max-h-72 overflow-y-auto custom-scrollbar pr-2">
-            {/* 1. KULLANICI (SEN) */}
             <div className="flex items-center gap-4 p-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl group hover:bg-blue-600/20 transition-all">
               <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-black text-sm overflow-hidden border-2 border-blue-500/20">
                 {user?.profilePicture ? <img src={user.profilePicture} className="w-full h-full object-cover" /> : user?.username?.[0].toUpperCase()}
@@ -297,17 +349,6 @@ export default function HubRoomPage() {
                 <p className="text-[9px] text-blue-400 font-black tracking-widest mt-0.5">{user?.karmaPoints || 0} KARMA</p>
               </div>
             </div>
-
-            {/* 2. DİĞER ÜYELER (SİSTEM GEZGİNLERİ) */}
-            <div className="flex items-center gap-4 p-3 bg-gray-900/40 border border-gray-800/60 rounded-2xl hover:border-gray-600 transition-all cursor-not-allowed grayscale-[0.5] hover:grayscale-0">
-              <div className="w-9 h-9 rounded-full bg-purple-600 flex items-center justify-center font-black text-sm border-2 border-purple-500/20">
-                A
-              </div>
-              <div>
-                <p className="text-xs font-black text-gray-400 uppercase tracking-tighter">AnlanQ</p>
-                <p className="text-[9px] text-purple-400 font-black tracking-widest mt-0.5">60 KARMA</p>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -315,9 +356,10 @@ export default function HubRoomPage() {
         <div className="mt-auto pt-6 border-t border-gray-800/40">
           <button 
             onClick={handleStartVoiceNetwork} 
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-[1.2rem] text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-blue-900/20 transition-all active:scale-95 flex items-center justify-center gap-3"
+            disabled={localStream !== null}
+            className="w-full bg-blue-600 hover:bg-blue-500 disabled:bg-green-600 disabled:opacity-100 text-white font-black py-4 rounded-[1.2rem] text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-blue-900/20 transition-all active:scale-95 flex items-center justify-center gap-3"
           >
-            <span className="text-lg">🎙️</span> CANLI AĞI BAŞLAT
+            <span className="text-lg">🎙️</span> {localStream ? "AĞA BAĞLISIN" : "CANLI AĞI BAŞLAT"}
           </button>
         </div>
       </aside>
@@ -325,7 +367,7 @@ export default function HubRoomPage() {
       {/* --- SAĞ PANEL: CANLI MEDYA VE SİNERJİ İLETİŞİM AKIŞI --- */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 bg-[#070b14] bg-grid-slate-900/[0.05]">
         
-        {/* ÜST BAR VE MEDYA KONTROLLERİ (IMAGE_FADBEE ÜST BÖLÜMÜ) */}
+        {/* ÜST BAR VE MEDYA KONTROLLERİ */}
         <div className="p-6 border-b border-gray-800/60 bg-[#0c1222]/80 backdrop-blur-xl flex justify-between items-center z-20 shadow-lg">
           <div className="flex items-center gap-4">
             <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
@@ -337,13 +379,13 @@ export default function HubRoomPage() {
           <div className="flex items-center gap-3">
             {localStream && (
               <div className="flex gap-2 mr-4 border-r border-gray-800 pr-4">
-                <button onClick={toggleMute} className={`p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isMuted ? "bg-red-600/20 border-red-500 text-red-400" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Mikrofon">
+                <button onClick={toggleMute} className={`p-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isMuted ? "bg-red-600/20 border-red-500 text-red-400" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Mikrofon">
                   {isMuted ? "🔇 Kapalı" : "🎙️ Açık"}
                 </button>
-                <button onClick={toggleCamera} className={`p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isCamOff ? "bg-red-600/20 border-red-500 text-red-400" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Kamera">
+                <button onClick={toggleCamera} className={`p-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isCamOff ? "bg-red-600/20 border-red-500 text-red-400" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Kamera">
                   {isCamOff ? "📹 Kapalı" : "📹 Açık"}
                 </button>
-                <button onClick={handleScreenShare} className={`p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isScreenSharing ? "bg-blue-600 text-white border-transparent" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Ekran Paylaş">
+                <button onClick={handleScreenShare} className={`p-2.5 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isScreenSharing ? "bg-blue-600 text-white border-transparent" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Ekran Paylaş">
                    🖥️ Ekran
                 </button>
               </div>
@@ -357,32 +399,39 @@ export default function HubRoomPage() {
           </div>
         </div>
 
-        {/* ANA GÖVDE: MEDYA EKRANI VE MESAJ AKIŞI */}
+        {/* ANA GÖVDE: MEDYA EKRANLARI VE MESAJ AKIŞI */}
         <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar flex flex-col">
           
-          {/* CANLI VİDEO EKRANI (OTOMATİK OYNATILAN) */}
-          {localStream && !isCamOff && (
-            <div className="w-full max-w-2xl bg-black border-2 border-blue-500/20 rounded-[2.5rem] p-1.5 relative overflow-hidden aspect-video shadow-[0_30px_60px_-15px_rgba(0,0,0,0.7)] mx-auto animate-in fade-in zoom-in duration-500">
-              {/* autoPlay, playsInline ve muted parametreleri siyah ekranı yok eder */}
-              <video 
-                ref={localVideoRef} 
-                autoPlay 
-                playsInline 
-                muted 
-                className="w-full h-full object-cover rounded-[2.2rem] transform scale-x-[-1] shadow-inner" 
-              />
-              <div className="absolute bottom-5 left-5 bg-black/60 backdrop-blur-xl border border-gray-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center gap-2">
-                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> Ben
-              </div>
-              {isScreenSharing && (
-                <div className="absolute top-5 right-5 bg-blue-600 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest animate-bounce">
-                  YAYINDA
+          {/* WEBRTC ÇOKLU VİDEO EKRANLARI (GRID MANTIKLI) */}
+          <div className="flex flex-wrap justify-center gap-6 w-full">
+            {/* 1. LOKAL VİDEO EKRANI (SEN) */}
+            {localStream && !isCamOff && (
+              <div className="w-full min-w-[280px] max-w-sm bg-black border-2 border-blue-500/20 rounded-[2.5rem] p-1.5 relative overflow-hidden aspect-video shadow-[0_30px_60px_-15px_rgba(0,0,0,0.7)] animate-in fade-in zoom-in duration-500">
+                <video 
+                  ref={localVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className="w-full h-full object-cover rounded-[2.2rem] transform scale-x-[-1] shadow-inner" 
+                />
+                <div className="absolute bottom-5 left-5 bg-black/60 backdrop-blur-xl border border-gray-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center gap-2">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> Ben
                 </div>
-              )}
-            </div>
-          )}
+                {isScreenSharing && (
+                  <div className="absolute top-5 right-5 bg-blue-600 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest animate-bounce">
+                    YAYINDA
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* MESAJ YANKILARI LİSTESİ */}
+            {/* 2. DİĞER KULLANICILAR (REMOTE STREAMS) PEERJS ÜZERİNDEN GELENLER */}
+            {remoteStreams.map((remote) => (
+              <RemoteVideo key={remote.peerId} peerId={remote.peerId} stream={remote.stream} />
+            ))}
+          </div>
+
+          {/* SİNERJİ MESAJLAŞMA AKIŞI */}
           <div className="space-y-6 flex-1 max-w-5xl mx-auto w-full">
             {messages.length === 0 ? (
               <div className="text-center py-20 bg-gray-900/20 border border-dashed border-gray-800 rounded-[3rem]">
@@ -433,7 +482,6 @@ export default function HubRoomPage() {
             )}
 
             <div className="flex gap-4 relative">
-              {/* DOSYA EKLEME (CLIP) BUTONU */}
               <label className="bg-gray-800/60 hover:bg-gray-700 text-gray-500 hover:text-blue-400 px-5 flex items-center justify-center rounded-[1.3rem] border border-gray-700 cursor-pointer transition-all shadow-inner group">
                 <span className="text-xl group-hover:scale-110 transition-transform">📎</span>
                 <input type="file" onChange={handleFileChange} className="hidden" />

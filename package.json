@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "js-cookie": "^3.0.7",
     "next": "16.2.6",
     "peerjs": "^1.5.5",
     "react": "19.2.4",

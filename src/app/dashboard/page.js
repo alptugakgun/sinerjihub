@@ -45,9 +45,9 @@ export default function DashboardPage() {
   const [newDm, setNewDm] = useState("");
   const [arrivalMessage, setArrivalMessage] = useState(null);
 
-  // --- YENİ EKLENEN: ARAMA VE ETİKET (HASHTAG) DURUMLARI ---
+  // --- ARAMA VE ETİKET (HASHTAG) DURUMLARI ---
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTag, setSelectedTag] = useState(null); // Tıklanan aktif hashtag
+  const [selectedTag, setSelectedTag] = useState(null); 
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -65,6 +65,16 @@ export default function DashboardPage() {
       toast('Sinyal: Yeni bir DM aldın! 💬', {
         style: { borderRadius: '1rem', background: '#1f2937', color: '#fff', border: '1px solid #374151', fontSize: '12px', fontWeight: 'bold' },
       });
+    });
+
+    // --- YENİ EKLENEN: CANLI BİLDİRİM DİNLEYİCİSİ ---
+    socket.current.on("getNotification", (data) => {
+      // 1. Sağ üstte anlık toast mesajı patlat
+      toast(`🔔 ${data.message}`, {
+        style: { borderRadius: '1rem', background: '#2563eb', color: '#fff', border: '1px solid #1e3a8a', fontSize: '12px', fontWeight: 'black', letterSpacing: '0.5px' },
+      });
+      // 2. Arayüzdeki bildirim listesini anlık olarak güncelle (Kırmızı nokta yansın)
+      setNotifications(prev => [{ _id: Date.now(), message: data.message, isRead: false }, ...prev]);
     });
 
     socket.current.on("newCommentUpdate", (data) => {
@@ -120,12 +130,11 @@ export default function DashboardPage() {
     fetchData();
   }, [router]);
 
-  // --- YENİ EKLENEN: ROZET (BADGE) RENDER MOTORU ---
-  // İlan sahiplerinin yetkilerini arayüzde neon olarak göstermek için
+  // --- ROZET (BADGE) RENDER MOTORU ---
   const renderBadges = (roles) => {
     if (!roles || roles.length === 0) return null;
     return roles.map((role, idx) => {
-      if (role === "Gezgin") return null; // Gezgin varsayılan olduğu için rozet basmıyoruz
+      if (role === "Gezgin") return null; 
       
       let style = "bg-gray-800 text-gray-400 border-gray-700";
       let icon = "•";
@@ -146,7 +155,7 @@ export default function DashboardPage() {
   // --- KABİLE KURMA FONKSİYONU ---
   const handleCreateHub = async (e) => {
     e.preventDefault();
-    if (user?.karmaPoints < 50) {
+    if (user?.karmaPoints < 50 && !user?.roles?.includes("Kurucu")) {
       toast.error("Bunun için en az 50 Karma (Ağ Gezgini) olmalısın!", { style: { background: '#7f1d1d', color: '#fff' } });
       return;
     }
@@ -177,7 +186,6 @@ export default function DashboardPage() {
     setIsCreatingHub(false);
   };
 
-  // --- YORUM (YANKI) FONKSİYONLARI ---
   const fetchComments = async (postId) => {
     try {
         const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comments`);
@@ -216,7 +224,19 @@ export default function DashboardPage() {
             setCommentInput("");
             setUser({ ...user, karmaPoints: (user.karmaPoints || 0) + 2 });
             toast.success("Yankı fırlatıldı! +2 Karma", { style: { background: '#1f2937', color: '#fff' } });
+            
             socket.current.emit("newPostComment", { postId });
+
+            // --- YENİ EKLENEN: İLAN SAHİBİNE CANLI YORUM BİLDİRİMİ FIRLAT ---
+            const targetPost = posts.find(p => p._id === postId);
+            if (targetPost && targetPost.user !== userId) {
+              socket.current.emit("sendNotification", {
+                senderId: userId,
+                receiverId: targetPost.user,
+                type: "comment",
+                message: `@${user.username} sinerjine bir yankı bıraktı! 💬`
+              });
+            }
         }
     } catch (err) { alert("Yorum iletilemedi."); }
     setIsCommenting(false);
@@ -242,6 +262,14 @@ export default function DashboardPage() {
         setFriendRequests(friendRequests.filter(req => req._id !== friendId));
         const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
         setUser(updatedUser);
+
+        // --- YENİ EKLENEN: KABUL EDİLEN KİŞİYE CANLI BİLDİRİM FIRLAT ---
+        socket.current.emit("sendNotification", {
+          senderId: userId,
+          receiverId: friendId,
+          type: "social",
+          message: `@${user.username} ağ bağlama isteğini kabul etti! ✨`
+        });
       }
     } catch (err) { alert("İstek kabul edilemedi."); }
   };
@@ -309,6 +337,18 @@ export default function DashboardPage() {
       });
       if (res.ok) {
         setPosts(posts.map(p => p._id === postId ? { ...p, upvotes: [...(p.upvotes || []), userId] } : p));
+        
+        // --- YENİ EKLENEN: İLAN SAHİBİNE CANLI DESTEK BİLDİRİMİ FIRLAT ---
+        const targetPost = posts.find(p => p._id === postId);
+        // Kendi ilanını beğenmediyse ve daha önce beğenmemişse bildirim at
+        if (targetPost && targetPost.user !== userId && !targetPost.upvotes?.includes(userId)) {
+          socket.current.emit("sendNotification", {
+            senderId: userId,
+            receiverId: targetPost.user,
+            type: "upvote",
+            message: `@${user.username} ilanını destekledi! 🙌`
+          });
+        }
       }
     } catch (err) { console.error(err); }
   };
@@ -331,8 +371,7 @@ export default function DashboardPage() {
     } catch (err) { console.error(err); }
   };
 
-  // --- YENİ EKLENEN: DİNAMİK TREND ALGORİTMASI ---
-  // Sistemdeki tüm postları tarayıp en çok geçen 5 etiketi (hashtag'i) sayar
+  // --- DİNAMİK TREND ALGORİTMASI ---
   const getTrendingTags = () => {
     const tagCounts = {};
     posts.forEach(post => {
@@ -343,7 +382,6 @@ export default function DashboardPage() {
         });
       }
     });
-    // Sayıya göre büyükten küçüğe sırala ve ilk 5'i al
     return Object.entries(tagCounts)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5)
@@ -368,7 +406,6 @@ export default function DashboardPage() {
     hub.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // YENİ: İlanlar artık hem arama çubuğuna hem de tıklanan hashtag'e (selectedTag) göre filtreleniyor
   const filteredPosts = posts.filter(post => {
     const matchesSearch = post.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           post.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -441,7 +478,7 @@ export default function DashboardPage() {
             <div>
               <h4 className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] mb-4">Son Etkinlikler</h4>
               {notifications.length === 0 ? <p className="text-gray-600 text-[10px] font-medium uppercase">Henüz bildirim yok.</p> : notifications.map(n => (
-                <div key={n._id} className="bg-gray-800 border border-gray-700 p-3 rounded-xl mb-2 text-[10px] text-gray-400 leading-relaxed font-medium">
+                <div key={n._id} className="bg-gray-800 border border-gray-700 p-3 rounded-xl mb-2 text-[10px] text-gray-400 leading-relaxed font-medium animate-in fade-in">
                   {n.message}
                 </div>
               ))}
@@ -587,7 +624,7 @@ export default function DashboardPage() {
                       <div className="flex items-center">
                         <span className="text-blue-400 font-black text-[11px] uppercase tracking-tighter">@{post.username}</span>
                         {/* ROZET MOTORU ÇAĞRILIYOR */}
-                        {renderBadges(post.roles || [])}
+                        {renderBadges(post.roles || post.userRoles || [])}
                       </div>
 
                       <span className="text-[9px] text-gray-600 font-bold uppercase">{formatDate(post.createdAt)}</span>
