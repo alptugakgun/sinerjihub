@@ -3,470 +3,469 @@ import Link from "next/link";
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { io } from "socket.io-client";
-import Peer from "peerjs";
 import { Toaster, toast } from "react-hot-toast";
 
-export default function HubDetailPage() {
-  const { id: hubId } = useParams();
+export default function HubRoomPage() {
+  const params = useParams();
   const router = useRouter();
+  const hubId = params.id;
+
+  const socket = useRef();
+  const localVideoRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   // --- TEMEL DURUMLAR (STATES) ---
+  const [user, setUser] = useState(null);
   const [hub, setHub] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+  const [messages, setMessages] = useState([]);
+  const [textInput, setTextInput] = useState("");
   const [isSending, setIsSending] = useState(false);
-  const [currentUser, setCurrentUser] = useState(null);
 
-  // --- DOSYA / GÖRSEL PAYLAŞIMI DURUMU ---
-  const [attachment, setAttachment] = useState(null);
+  // --- DOSYA EKLEME (ATTACHMENT) DURUMLARI ---
+  const [attachment, setAttachment] = useState("");
+  const [attachmentName, setAttachmentName] = useState("");
+  const [attachmentType, setAttachmentType] = useState("");
 
-  // --- GÖRÜNTÜLÜ SOHBET VE EKRAN PAYLAŞIMI DURUMLARI ---
-  const [isVoiceActive, setIsVoiceActive] = useState(false);
-  const [myStream, setMyStream] = useState(null);
-  const [peerStreams, setPeerStreams] = useState([]);
-  const [isVideoMuted, setIsVideoMuted] = useState(false);
-  const [isAudioMuted, setIsAudioMuted] = useState(false);
-  const [isScreenSharing, setIsScreenSharing] = useState(false); // YENİ EKLENDİ
+  // --- MEDYA VE GERÇEK ZAMANLI İLETİŞİM DURUMLARI ---
+  const [localStream, setLocalStream] = useState(null);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCamOff, setIsCamOff] = useState(false);
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
+  const [activeVoiceMembers, setActiveVoiceMembers] = useState([]);
 
-  // --- REFERANSLAR ---
-  const messagesEndRef = useRef(null);
-  const socket = useRef(); 
-  const peer = useRef();
-  const myVideoRef = useRef(); 
-
-  // Her yeni mesajda en alta kaydırma
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
+  // --- 1. ARKA PLAN MOTORU VE SOCKET LISTENERS ---
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  // --- SOCKET VE PEER BAĞLANTILARI ---
-  useEffect(() => {
+    // Sunucu bağlantısı kuruluyor
     socket.current = io("https://sinerjihub-1.onrender.com");
 
+    // Canlı Kabile Odasına Gelen Mesajları Yakala
     socket.current.on("getHubMessage", (data) => {
       setMessages((prev) => [...prev, data]);
+      setTimeout(() => scrollToBottom(), 100);
     });
 
+    // Canlı Ses/Video Odasına Biri Katıldığında
     socket.current.on("user-connected-voice", (peerId) => {
-      if (myStream && peer.current) {
-        connectToNewUser(peerId, myStream);
-      }
+      setActiveVoiceMembers((prev) => {
+        if (!prev.includes(peerId)) {
+          toast.success("🎙️ Canlı ağa yeni bir gezgin katıldı!", {
+            style: { borderRadius: '1rem', background: '#1e1b4b', color: '#fff', fontSize: '12px', fontWeight: 'bold' }
+          });
+          return [...prev, peerId];
+        }
+        return prev;
+      });
+    });
+
+    // Canlı Ses/Video Odasından Biri Çıktığında
+    socket.current.on("user-disconnected-voice", (peerId) => {
+      setActiveVoiceMembers((prev) => prev.filter((id) => id !== peerId));
+      toast.error("🔌 Bir gezgin canlı ağdan ayrıldı.");
     });
 
     return () => {
-      socket.current.disconnect();
-      if (peer.current) peer.current.destroy();
-      if (myStream) myStream.getTracks().forEach(track => track.stop());
+      if (socket.current) {
+        socket.current.disconnect();
+      }
     };
-  }, [myStream]);
+  }, []);
 
-  // --- VERİ ÇEKME İŞLEMİ ---
+  // --- 2. VERİ ÇEKME VE ODAYA GİRİŞ ETKİSİ ---
   useEffect(() => {
-    const fetchHubData = async () => {
+    const fetchHubAndUserData = async () => {
       const userId = localStorage.getItem("userId");
-      if (!userId) { router.push("/login"); return; }
+      if (!userId || userId === "undefined") {
+        router.push("/login");
+        return;
+      }
 
       try {
+        // A. Kullanıcı Profil Bilgisi
         const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        const userData = await userRes.json();
         if (userRes.ok) {
-          const userData = await userRes.json();
-          setCurrentUser(userData);
-
-          if (!userData.hubs.includes(hubId)) {
-            toast.error("Bu çalışma odasına girmek için kabileye katılmalısın dostum!", { style: { background: '#7f1d1d', color: '#fff' } });
-            router.push("/dashboard");
-            return;
-          }
-          socket.current.emit("joinHubRoom", hubId);
+          setUser(userData);
         } else {
-          router.push("/login"); return;
+          router.push("/login");
+          return;
         }
 
-        const hubRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}`);
-        if (hubRes.ok) setHub(await hubRes.json());
+        // B. Tüm Kabileleri Çek ve Bu Odayı Bul
+        const hubRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/all`);
+        const allHubs = await hubRes.json();
+        const currentHub = allHubs.find((h) => h._id === hubId);
+        
+        if (currentHub) {
+          setHub(currentHub);
+          
+          // C. Socket Odasına Abone Ol
+          socket.current.emit("joinHubRoom", hubId);
+          socket.current.emit("newUser", userId);
 
-        const messagesRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}/messages`);
-        if (messagesRes.ok) setMessages(await messagesRes.json());
-
-      } catch (error) {
-        console.error("Kabile verileri çekilemedi:", error);
+          // D. Varsa Odanın Eski Mesaj Geçmişini Yükle
+          if (currentHub.messages) {
+            setMessages(currentHub.messages);
+          }
+          setTimeout(() => scrollToBottom(), 300);
+        } else {
+          toast.error("Hata: Kabile ekosistemde mevcut değil.");
+          router.push("/dashboard");
+        }
+      } catch (err) {
+        console.error("Veri çekme hatası:", err);
+        toast.error("Bağlantı hatası!");
       } finally {
         setIsLoading(false);
       }
     };
-    fetchHubData();
+
+    fetchHubAndUserData();
   }, [hubId, router]);
 
-  // --- DOSYA SEÇME VE BASE64 DÖNÜŞTÜRME ---
-  const handleFileSelect = (e) => {
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  // --- 3. DOSYA SEÇME VE BASE64 FORMATINA ÇEVİRME MOTORU ---
+  const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) { 
-      toast.error("Sıfır bütçe kuralları! Dosya boyutu 2MB'den küçük olmalı.", { style: { background: '#7f1d1d', color: '#fff' } });
-      e.target.value = null;
+    // Boyut Kontrolü (5MB Limit)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Dosya boyutu çok büyük! Maksimum 5MB fırlatabilirsin.", {
+        style: { background: '#7f1d1d', color: '#fff' }
+      });
       return;
     }
 
+    setAttachmentName(file.name);
+    setAttachmentType(file.type);
+
     const reader = new FileReader();
+    reader.readAsDataURL(file);
     reader.onloadend = () => {
-      setAttachment({
-        data: reader.result,
-        name: file.name,
-        type: file.type
+      setAttachment(reader.result);
+      toast.success("Dosya sinyal kuyruğuna eklendi! 📎", {
+        style: { background: '#1f2937', color: '#fff' }
       });
     };
-    reader.readAsDataURL(file);
   };
 
-  // --- MESAJ VE DOSYA GÖNDERME ---
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() && !attachment) return;
-    
-    setIsSending(true);
-    const userId = localStorage.getItem("userId");
-
-    const payload = {
-      hubId: hubId,
-      senderId: userId,
-      username: currentUser?.username || "Gezgin",
-      content: newMessage,
-      attachment: attachment?.data || null,
-      attachmentName: attachment?.name || null,
-      attachmentType: attachment?.type || null
-    };
-
-    socket.current.emit("sendHubMessage", payload);
-
+  // --- 4. WEBRTC CANLI MEDYA BAĞLANTI MOTORLARI ---
+  
+  // Kamera ve Mikrofon Başlat
+  const handleStartVoiceNetwork = async () => {
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}/messages/create`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, ...payload }),
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: true,
+        audio: true,
       });
 
-      if (res.ok) {
-        const savedMessage = await res.json();
-        setMessages((prev) => [...prev.filter(m => m._id), savedMessage]);
-        setNewMessage("");
-        setAttachment(null);
+      setLocalStream(stream);
+
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = stream;
       }
-    } catch (err) { 
-        toast.error("Sunucuyla bağlantı hatası oluştu.", { style: { background: '#7f1d1d', color: '#fff' } });
+
+      socket.current.emit("join-voice-room", { hubId, peerId: user?._id });
+      toast.success("⚡ Sinerji Canlı İletişim Ağı Aktif! Kamera açıldı.");
+    } catch (err) {
+      console.error("Medya erişim hatası:", err);
+      toast.error("Kamera izni alınamadı! Lütfen adres çubuğundaki kilit (🔒) simgesinden izin ver dostum.");
     }
+  };
+
+  // Ekran Paylaşımı Başlat
+  const handleScreenShare = async () => {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = screenStream;
+      }
+      
+      setIsScreenSharing(true);
+      
+      // Ekran paylaşımı bittiğinde kameraya geri dön
+      screenStream.getVideoTracks()[0].onended = () => {
+        if (localStream && localVideoRef.current) {
+          localVideoRef.current.srcObject = localStream;
+        }
+        setIsScreenSharing(false);
+      };
+      
+      toast.success("🖥️ Ekran paylaşımı sinyali başladı!");
+    } catch (err) {
+      console.error("Ekran paylaşılamadı:", err);
+    }
+  };
+
+  // Ses Durumu Kontrolü
+  const toggleMute = () => {
+    if (localStream) {
+      localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled;
+      setIsMuted(!isMuted);
+    }
+  };
+
+  // Kamera Durumu Kontrolü
+  const toggleCamera = () => {
+    if (localStream) {
+      localStream.getVideoTracks()[0].enabled = !localStream.getVideoTracks()[0].enabled;
+      setIsCamOff(!isCamOff);
+    }
+  };
+
+  // --- 5. MESAJ VE SİNYAL GÖNDERME FONKSİYONU ---
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    if (!textInput.trim() && !attachment) return;
+
+    setIsSending(true);
+    const msgData = {
+      hubId,
+      senderId: user?._id,
+      username: user?.username,
+      content: textInput,
+      attachment,
+      attachmentName,
+      attachmentType,
+    };
+
+    // Socket üzerinden odadaki herkese anlık fırlatıyoruz
+    socket.current.emit("sendHubMessage", msgData);
+    
+    // Kendi ekranımıza ekliyoruz
+    setMessages((prev) => [...prev, { ...msgData, createdAt: Date.now(), user: user?._id }]);
+    
+    // Giriş alanlarını temizle
+    setTextInput("");
+    setAttachment("");
+    setAttachmentName("");
+    setAttachmentType("");
+    
+    setTimeout(() => scrollToBottom(), 50);
     setIsSending(false);
   };
 
-  // --- WEBRTC GÖRÜNTÜLÜ SOHBET BAŞLATMA ---
-  const startVoiceAndVideo = () => {
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        setMyStream(stream);
-        setIsVoiceActive(true);
-        if (myVideoRef.current) myVideoRef.current.srcObject = stream;
-
-        const newPeer = new Peer(undefined, { host: '0.peerjs.com', port: 443, secure: true });
-        peer.current = newPeer;
-
-        newPeer.on('open', (id) => {
-          socket.current.emit('join-voice-room', { hubId, peerId: id });
-          toast.success("Odaya bağlandın!", { style: { background: '#1f2937', color: '#fff' } });
-        });
-
-        newPeer.on('call', (call) => {
-          call.answer(stream);
-          call.on('stream', (userVideoStream) => {
-            addVideoStream(call.peer, userVideoStream);
-          });
-        });
-      })
-      .catch(err => {
-        toast.error("Kamera veya mikrofona erişilemedi! İzin verdiğinden emin ol.", { style: { background: '#7f1d1d', color: '#fff' } });
-      });
-  };
-
-  // --- YENİ EKLENEN: EKRAN PAYLAŞIMI FONKSİYONLARI ---
-  const toggleScreenShare = async () => {
-    if (!isScreenSharing) {
-      try {
-        const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-        const screenTrack = displayStream.getVideoTracks()[0];
-        
-        // Kendi ekranımda kameram yerine paylaştığım ekranı göster
-        if (myVideoRef.current) myVideoRef.current.srcObject = displayStream;
-
-        // Bağlı olan tüm kullanıcılara kamera verisi yerine ekran verisini yolla (Track Replacement)
-        if (peer.current && peer.current.connections) {
-          Object.values(peer.current.connections).forEach(conns => {
-            conns.forEach(conn => {
-              if (conn.peerConnection) {
-                const sender = conn.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-                if (sender) sender.replaceTrack(screenTrack);
-              }
-            });
-          });
-        }
-        setIsScreenSharing(true);
-        toast.success("Ekran paylaşımı başlatıldı!", { style: { background: '#1f2937', color: '#fff' } });
-
-        // Kullanıcı tarayıcının kendi "Paylaşımı Durdur" butonuna basarsa
-        screenTrack.onended = () => {
-          stopScreenShare();
-        };
-      } catch (err) {
-        toast.error("Ekran paylaşımı başlatılamadı veya iptal edildi.", { style: { background: '#7f1d1d', color: '#fff' } });
-      }
-    } else {
-      stopScreenShare();
-    }
-  };
-
-  const stopScreenShare = () => {
-    if (myStream) {
-      const camTrack = myStream.getVideoTracks()[0];
-      
-      // Tekrar eski kamera görüntümüze dön
-      if (myVideoRef.current) myVideoRef.current.srcObject = myStream;
-      
-      // Diğer kullanıcılara giden ekran verisini kesip kamerayı geri ver
-      if (peer.current && peer.current.connections) {
-        Object.values(peer.current.connections).forEach(conns => {
-          conns.forEach(conn => {
-            if (conn.peerConnection) {
-              const sender = conn.peerConnection.getSenders().find(s => s.track && s.track.kind === 'video');
-              if (sender) sender.replaceTrack(camTrack);
-            }
-          });
-        });
-      }
-    }
-    setIsScreenSharing(false);
-    toast.success("Kamera görüntüsüne dönüldü.", { style: { background: '#1f2937', color: '#fff' } });
-  };
-
-  // --- PEER BAĞLANTI YARDIMCILARI ---
-  const connectToNewUser = (peerId, stream) => {
-    if (!peer.current) return;
-    const call = peer.current.call(peerId, stream);
-    call.on('stream', (userVideoStream) => {
-      addVideoStream(peerId, userVideoStream);
-    });
-  };
-
-  const addVideoStream = (peerId, stream) => {
-    setPeerStreams(prev => {
-      if (prev.some(p => p.peerId === peerId)) return prev;
-      return [...prev, { peerId, stream }];
-    });
-  };
-
-  const toggleVideo = () => {
-    if (myStream) {
-      myStream.getVideoTracks()[0].enabled = isVideoMuted;
-      setIsVideoMuted(!isVideoMuted);
-    }
-  };
-
-  const toggleAudio = () => {
-    if (myStream) {
-      myStream.getAudioTracks()[0].enabled = isAudioMuted;
-      setIsAudioMuted(!isAudioMuted);
-    }
-  };
-
-  const leaveVoiceRoom = () => {
-    if (myStream) myStream.getTracks().forEach(track => track.stop());
-    if (isScreenSharing) stopScreenShare(); // Ekran paylaşımı açıksa onu da kapat
-    if (peer.current) peer.current.destroy();
-    setIsVoiceActive(false);
-    setPeerStreams([]);
-    setMyStream(null);
-  };
-
-  const formatTime = (dateString) => {
-    return new Date(dateString).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-  };
-
   if (isLoading) return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
-      <div className="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-gray-400 font-bold tracking-widest uppercase text-[10px]">Kabile Bağlantısı Kuruluyor...</p>
+    <div className="min-h-screen bg-[#070b14] flex items-center justify-center text-white flex-col">
+      <div className="w-14 h-14 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-6 shadow-[0_0_20px_rgba(37,99,235,0.4)]"></div>
+      <p className="text-blue-500 font-black tracking-[0.3em] uppercase text-[10px] animate-pulse">Kabile Kapısı Açılıyor...</p>
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-[#0a0f1c] text-white flex flex-col md:flex-row font-sans selection:bg-indigo-500/30 overflow-hidden">
-      
-      <Toaster position="top-center" reverseOrder={false} />
+    <div className="min-h-screen bg-[#070b14] text-white font-sans flex flex-col md:flex-row relative overflow-hidden selection:bg-blue-500/30">
+      <Toaster position="top-center" />
 
-      {/* SOL PANEL: ODA BİLGİLERİ VE ÜYELER */}
-      <aside className="w-full md:w-80 bg-gray-800/40 border-r border-gray-700/50 flex flex-col p-6 backdrop-blur-2xl md:h-screen z-20">
-        <Link href="/dashboard" className="text-gray-500 hover:text-white transition-all mb-8 flex items-center gap-2 text-[10px] font-black uppercase tracking-widest group">
-          <span className="group-hover:-translate-x-1 transition-transform">←</span> ANA ÜSSE DÖN
+      {/* --- SOL PANEL: KABİLE DETAYLARI VE ÜYE HİYERARŞİSİ --- */}
+      <aside className="w-full md:w-80 bg-[#0c1222]/95 border-r border-gray-800/60 p-6 flex flex-col backdrop-blur-3xl z-10 select-none shadow-2xl">
+        <Link href="/dashboard" className="text-gray-500 hover:text-white text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-3 mb-10 group transition-all">
+          <span className="w-6 h-6 bg-gray-800 rounded-full flex items-center justify-center group-hover:-translate-x-1 transition-transform">←</span> 
+          Ana Üsse Dön
         </Link>
-        <div className="text-center mb-8 pb-8 border-b border-gray-700/50 relative">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl -z-10"></div>
-          <div className="text-6xl mb-4 drop-shadow-2xl">{hub?.icon}</div>
-          <h1 className="text-2xl font-black mb-2 tracking-tighter italic uppercase">{hub?.name}</h1>
-          <span className="text-[9px] font-black bg-indigo-500/10 border border-indigo-500/20 px-3 py-1.5 rounded-full text-indigo-400 uppercase tracking-widest">
+
+        {/* KABİLE KİMLİK KARTI */}
+        <div className="text-center mb-10 bg-gradient-to-b from-gray-800/10 to-transparent border border-gray-800/40 p-8 rounded-[3rem] relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent"></div>
+          <span className="text-6xl mb-4 block drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">{hub?.icon}</span>
+          <h2 className="text-xl font-black uppercase tracking-tight text-white mb-2">{hub?.name}</h2>
+          <span className="inline-block bg-blue-600/10 text-blue-400 border border-blue-500/20 px-4 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-widest">
             {hub?.category}
           </span>
-          {hub?.isPrivate && <div className="mt-3 text-[10px] text-red-400 font-black tracking-widest border border-red-500/30 bg-red-500/10 py-1 rounded-md uppercase">🔒 Şifreli Özel Kabile</div>}
-          <p className="text-xs text-gray-400 mt-5 leading-relaxed font-medium">{hub?.description}</p>
+          <p className="text-[11px] text-gray-500 mt-5 leading-relaxed font-medium px-2">{hub?.description}</p>
         </div>
-        <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-          <h3 className="text-[10px] font-black uppercase tracking-widest text-gray-500 mb-4 flex justify-between items-center">
-            Kabiledeki Üyeler
-            <span className="bg-gray-800 border border-gray-700 text-gray-400 px-2 py-1 rounded-md text-[9px]">{hub?.members?.length || 0}</span>
+
+        {/* KABİLE ÜYELERİ (IMAGE_FADBEE HİYERARŞİSİ) */}
+        <div className="flex-1 flex flex-col min-h-[250px]">
+          <h3 className="text-[10px] font-black text-gray-600 uppercase tracking-[0.2em] mb-6 px-2 flex justify-between items-center border-b border-gray-800 pb-3">
+            <span>KABİLE ÜYELERİ</span>
+            <span className="bg-gray-800 text-gray-400 px-2 py-0.5 rounded-md text-[8px]">{hub?.members?.length || 2}</span>
           </h3>
-          <div className="space-y-2">
-            {hub?.members?.map(member => {
-              const isMe = member._id === currentUser?._id;
-              return (
-                <div key={member._id} className={`flex items-center gap-3 p-3 rounded-2xl transition-all ${isMe ? 'bg-indigo-600/10 border border-indigo-500/20' : 'hover:bg-gray-800/50 border border-transparent'}`}>
-                  <div className="w-8 h-8 bg-gradient-to-tr from-indigo-500 to-purple-600 rounded-full flex items-center justify-center font-black text-xs shadow-lg flex-shrink-0 overflow-hidden">
-                    {member.profilePicture ? <img src={member.profilePicture} className="w-full h-full object-cover" /> : member.username.charAt(0).toUpperCase()}
-                  </div>
-                  <div className="overflow-hidden flex-1">
-                    <p className={`text-xs font-bold truncate ${isMe ? 'text-indigo-400' : 'text-gray-200'}`}>{member.username} {isMe && "(Sen)"}</p>
-                    <p className="text-[9px] text-gray-500 font-bold tracking-tighter">{member.karmaPoints} KARMA</p>
-                  </div>
-                </div>
-              );
-            })}
+          
+          <div className="space-y-3 max-h-72 overflow-y-auto custom-scrollbar pr-2">
+            {/* 1. KULLANICI (SEN) */}
+            <div className="flex items-center gap-4 p-3 bg-blue-600/10 border border-blue-500/30 rounded-2xl group hover:bg-blue-600/20 transition-all">
+              <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center font-black text-sm overflow-hidden border-2 border-blue-500/20">
+                {user?.profilePicture ? <img src={user.profilePicture} className="w-full h-full object-cover" /> : user?.username?.[0].toUpperCase()}
+              </div>
+              <div>
+                <p className="text-xs font-black text-white uppercase tracking-tighter">{user?.username} <span className="text-[9px] text-blue-400/70 ml-1">(Sen)</span></p>
+                <p className="text-[9px] text-blue-400 font-black tracking-widest mt-0.5">{user?.karmaPoints || 0} KARMA</p>
+              </div>
+            </div>
+
+            {/* 2. DİĞER ÜYELER (SİSTEM GEZGİNLERİ) */}
+            <div className="flex items-center gap-4 p-3 bg-gray-900/40 border border-gray-800/60 rounded-2xl hover:border-gray-600 transition-all cursor-not-allowed grayscale-[0.5] hover:grayscale-0">
+              <div className="w-9 h-9 rounded-full bg-purple-600 flex items-center justify-center font-black text-sm border-2 border-purple-500/20">
+                A
+              </div>
+              <div>
+                <p className="text-xs font-black text-gray-400 uppercase tracking-tighter">AnlanQ</p>
+                <p className="text-[9px] text-purple-400 font-black tracking-widest mt-0.5">60 KARMA</p>
+              </div>
+            </div>
           </div>
+        </div>
+
+        {/* CANLI BAĞLANTI TETİKLEYİCİSİ */}
+        <div className="mt-auto pt-6 border-t border-gray-800/40">
+          <button 
+            onClick={handleStartVoiceNetwork} 
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-[1.2rem] text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-blue-900/20 transition-all active:scale-95 flex items-center justify-center gap-3"
+          >
+            <span className="text-lg">🎙️</span> CANLI AĞI BAŞLAT
+          </button>
         </div>
       </aside>
 
-      {/* SAĞ PANEL: SOHBET VE KAMERA/EKRAN PAYLAŞIM ALANI */}
-      <main className="flex-1 flex flex-col h-[calc(100vh-80px)] md:h-screen relative bg-[#0a0f1c]">
+      {/* --- SAĞ PANEL: CANLI MEDYA VE SİNERJİ İLETİŞİM AKIŞI --- */}
+      <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 bg-[#070b14] bg-grid-slate-900/[0.05]">
         
-        <header className="px-8 py-5 border-b border-gray-800/80 bg-gray-900/80 backdrop-blur-xl z-10 flex flex-wrap justify-between items-center gap-4">
-          <div>
-            <h2 className="text-lg font-black tracking-tight flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Sinerji İletişim Ağı
-            </h2>
+        {/* ÜST BAR VE MEDYA KONTROLLERİ (IMAGE_FADBEE ÜST BÖLÜMÜ) */}
+        <div className="p-6 border-b border-gray-800/60 bg-[#0c1222]/80 backdrop-blur-xl flex justify-between items-center z-20 shadow-lg">
+          <div className="flex items-center gap-4">
+            <div className="w-2.5 h-2.5 bg-green-500 rounded-full animate-pulse shadow-[0_0_10px_#22c55e]"></div>
+            <h3 className="font-black text-[11px] uppercase tracking-[0.3em] text-gray-200">
+              Sinerji İletişim Ağı
+            </h3>
           </div>
-          {!isVoiceActive ? (
-            <button onClick={startVoiceAndVideo} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(79,70,229,0.3)] flex items-center gap-2">
-              <span>🎙️</span> Canlı Bağlantıya Katıl
-            </button>
-          ) : (
-            <div className="flex items-center gap-2 bg-gray-800 border border-gray-700 p-1.5 rounded-full">
-              <button onClick={toggleAudio} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isAudioMuted ? 'bg-red-500/20 text-red-500' : 'bg-gray-700 hover:bg-gray-600 text-white'}`} title="Mikrofonu Aç/Kapat">{isAudioMuted ? '🔇' : '🎤'}</button>
-              <button onClick={toggleVideo} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isVideoMuted ? 'bg-red-500/20 text-red-500' : 'bg-gray-700 hover:bg-gray-600 text-white'}`} title="Kamerayı Aç/Kapat">{isVideoMuted ? '📵' : '📹'}</button>
-              
-              {/* YENİ: EKRAN PAYLAŞIMI BUTONU */}
-              <button onClick={toggleScreenShare} className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${isScreenSharing ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/50' : 'bg-gray-700 hover:bg-gray-600 text-white'}`} title="Ekranı Paylaş">
-                {isScreenSharing ? '🖥️' : '💻'}
-              </button>
 
-              <div className="w-[1px] h-6 bg-gray-600 mx-2"></div>
-              <button onClick={leaveVoiceRoom} className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all">Bağlantıyı Kes</button>
-            </div>
-          )}
-        </header>
-
-        {/* KAMERA VE EKRAN PAYLAŞIM IZGARASI */}
-        {isVoiceActive && (
-          <div className="w-full bg-gray-900/60 border-b border-gray-800 p-4 grid grid-cols-2 md:grid-cols-4 gap-4 overflow-x-auto min-h-[200px] max-h-[300px]">
-            <div className={`relative bg-black rounded-2xl overflow-hidden aspect-video shadow-lg border-2 ${isScreenSharing ? 'border-green-500' : 'border-indigo-500'}`}>
-              <video ref={myVideoRef} autoPlay playsInline muted className={`w-full h-full object-cover ${isVideoMuted && !isScreenSharing ? 'opacity-0' : 'opacity-100'}`} />
-              <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[9px] font-bold">
-                {isScreenSharing ? "Ben (Ekran Yayını)" : "Ben"}
+          <div className="flex items-center gap-3">
+            {localStream && (
+              <div className="flex gap-2 mr-4 border-r border-gray-800 pr-4">
+                <button onClick={toggleMute} className={`p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isMuted ? "bg-red-600/20 border-red-500 text-red-400" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Mikrofon">
+                  {isMuted ? "🔇 Kapalı" : "🎙️ Açık"}
+                </button>
+                <button onClick={toggleCamera} className={`p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isCamOff ? "bg-red-600/20 border-red-500 text-red-400" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Kamera">
+                  {isCamOff ? "📹 Kapalı" : "📹 Açık"}
+                </button>
+                <button onClick={handleScreenShare} className={`p-3 rounded-xl border text-[10px] font-black uppercase tracking-widest transition-all ${isScreenSharing ? "bg-blue-600 text-white border-transparent" : "bg-gray-800/60 border-gray-700 text-gray-400 hover:text-white"}`} title="Ekran Paylaş">
+                   🖥️ Ekran
+                </button>
               </div>
-              {isVideoMuted && !isScreenSharing && <div className="absolute inset-0 flex items-center justify-center text-4xl">👤</div>}
-            </div>
-            {peerStreams.map((peerObj, index) => (
-              <VideoPlayer key={index} stream={peerObj.stream} peerId={peerObj.peerId} />
-            ))}
-          </div>
-        )}
-
-        {/* MESAJ VE DOSYA AKIŞI */}
-        <div className="flex-1 p-4 md:p-8 overflow-y-auto space-y-6 custom-scrollbar bg-grid-slate-900/[0.04]">
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-gray-500 space-y-4">
-              <span className="text-6xl opacity-20 drop-shadow-2xl">{hub?.icon}</span>
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-600">Bu odada henüz sinerji parlamadı. İlk mesajı sen gönder!</p>
-            </div>
-          ) : (
-            messages.map((msg, index) => {
-              const isMe = msg.user === currentUser?._id;
-              const showName = index === 0 || messages[index - 1].user !== msg.user;
-              
-              return (
-                <div key={msg._id || index} className={`flex flex-col max-w-[85%] md:max-w-[70%] ${isMe ? "ml-auto items-end" : "mr-auto items-start"}`}>
-                  {!isMe && showName && <span className="text-[10px] text-gray-500 mb-1 ml-2 font-bold tracking-widest uppercase">{msg.username}</span>}
-                  
-                  <div className={`px-5 py-3.5 shadow-xl flex flex-col gap-2 ${isMe ? "bg-indigo-600 text-white rounded-2xl rounded-tr-sm" : "bg-gray-800/80 text-gray-200 border border-gray-700/50 rounded-2xl rounded-tl-sm backdrop-blur-sm"}`}>
-                    
-                    {/* GÖRSEL VEYA DOSYA RENDER ALANI */}
-                    {msg.attachment && (
-                      msg.attachmentType?.startsWith('image/') ? (
-                        <img src={msg.attachment} alt="Sinerji Görseli" className="max-w-full rounded-lg max-h-64 object-cover border border-white/10" />
-                      ) : (
-                        <a href={msg.attachment} download={msg.attachmentName} className={`flex items-center gap-2 p-2 rounded-lg text-xs font-bold ${isMe ? 'bg-white/20 hover:bg-white/30' : 'bg-gray-700 hover:bg-gray-600'} transition-colors`}>
-                           📄 {msg.attachmentName}
-                        </a>
-                      )
-                    )}
-                    
-                    {msg.content && <p className="text-sm leading-relaxed whitespace-pre-wrap font-medium">{msg.content}</p>}
-                  </div>
-                  <span className={`text-[9px] text-gray-600 mt-1.5 font-bold ${isMe ? "mr-1" : "ml-1"}`}>{formatTime(msg.createdAt)}</span>
-                </div>
-              );
-            })
-          )}
-          <div ref={messagesEndRef} className="h-1" />
-        </div>
-
-        {/* YAZILI MESAJ VE DOSYA GİRİŞ PANELİ */}
-        <div className="p-4 md:p-6 border-t border-gray-800/80 bg-gray-900/90 backdrop-blur-xl flex flex-col gap-3">
-          
-          {attachment && (
-             <div className="flex items-center gap-3 bg-gray-800 border border-gray-700 px-4 py-2 rounded-xl max-w-fit animate-in fade-in slide-in-from-bottom-2">
-                <span className="text-xl">{attachment.type.startsWith('image/') ? '🖼️' : '📄'}</span>
-                <span className="text-xs font-bold text-gray-300 truncate max-w-[200px]">{attachment.name}</span>
-                <button onClick={() => setAttachment(null)} className="text-red-400 hover:text-red-300 font-black ml-2">✖</button>
-             </div>
-          )}
-
-          <form onSubmit={handleSendMessage} className="flex gap-3 max-w-5xl w-full mx-auto relative items-center">
-            
-            <label className="cursor-pointer bg-gray-800 border border-gray-700 hover:bg-gray-700 transition-colors w-12 h-12 flex items-center justify-center rounded-full text-xl flex-shrink-0 shadow-inner">
-               📎
-               <input type="file" className="hidden" onChange={handleFileSelect} accept="image/*,.pdf,.doc,.docx,.txt" />
-            </label>
-
-            <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder={`${hub?.name || 'Kabile'} odasına fikir fırlat...`} className="flex-1 bg-gray-800/50 border border-gray-700/50 rounded-full px-6 py-4 text-sm text-white outline-none focus:border-indigo-500/50 focus:bg-gray-800 transition-all shadow-inner" autoComplete="off" />
-            
-            <button type="submit" disabled={isSending || (!newMessage.trim() && !attachment)} className="bg-indigo-600 hover:bg-indigo-500 text-white rounded-full px-6 h-12 font-black text-[10px] uppercase tracking-widest transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(79,70,229,0.3)]">
-              {isSending ? "..." : "Fırlat"}
+            )}
+            <button 
+              onClick={() => router.push('/dashboard')} 
+              className="bg-red-600/10 hover:bg-red-600 border border-red-500/20 hover:border-transparent text-red-500 hover:text-white px-5 py-3 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95"
+            >
+              BAĞLANTIYI KES
             </button>
-          </form>
+          </div>
         </div>
 
+        {/* ANA GÖVDE: MEDYA EKRANI VE MESAJ AKIŞI */}
+        <div className="flex-1 overflow-y-auto p-6 md:p-10 space-y-8 custom-scrollbar flex flex-col">
+          
+          {/* CANLI VİDEO EKRANI (OTOMATİK OYNATILAN) */}
+          {localStream && !isCamOff && (
+            <div className="w-full max-w-2xl bg-black border-2 border-blue-500/20 rounded-[2.5rem] p-1.5 relative overflow-hidden aspect-video shadow-[0_30px_60px_-15px_rgba(0,0,0,0.7)] mx-auto animate-in fade-in zoom-in duration-500">
+              {/* autoPlay, playsInline ve muted parametreleri siyah ekranı yok eder */}
+              <video 
+                ref={localVideoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                className="w-full h-full object-cover rounded-[2.2rem] transform scale-x-[-1] shadow-inner" 
+              />
+              <div className="absolute bottom-5 left-5 bg-black/60 backdrop-blur-xl border border-gray-800 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] text-white flex items-center gap-2">
+                <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span> Ben
+              </div>
+              {isScreenSharing && (
+                <div className="absolute top-5 right-5 bg-blue-600 px-3 py-1.5 rounded-lg text-[8px] font-black uppercase tracking-widest animate-bounce">
+                  YAYINDA
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* MESAJ YANKILARI LİSTESİ */}
+          <div className="space-y-6 flex-1 max-w-5xl mx-auto w-full">
+            {messages.length === 0 ? (
+              <div className="text-center py-20 bg-gray-900/20 border border-dashed border-gray-800 rounded-[3rem]">
+                <p className="text-gray-600 text-xs font-black uppercase tracking-[0.3em] mb-2 opacity-50">Sinerji Dalgası Bekleniyor</p>
+                <p className="text-[10px] text-gray-700 uppercase font-bold">Kabileni harekete geçirecek ilk sinyali sen fırlat!</p>
+              </div>
+            ) : (
+              messages.map((msg, idx) => {
+                const isMe = msg.senderId === user?._id || msg.user === user?._id;
+                return (
+                  <div key={idx} className={`flex flex-col ${isMe ? "items-end" : "items-start"} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                    <span className="text-[9px] text-gray-600 font-black uppercase mb-2 px-2 tracking-widest">@{msg.username}</span>
+                    
+                    <div className={`max-w-[85%] px-5 py-4 rounded-[1.8rem] text-sm leading-relaxed font-medium shadow-xl border transition-all ${isMe ? "bg-blue-600 border-transparent text-white rounded-tr-none" : "bg-gray-800/60 border-gray-700 text-gray-200 rounded-tl-none hover:bg-gray-800/80"}`}>
+                      {msg.content}
+
+                      {/* DOSYA EKİ GÖSTERİMİ */}
+                      {msg.attachment && (
+                        <div className="mt-4 pt-4 border-t border-white/10 flex flex-col gap-3">
+                          {msg.attachmentType?.startsWith("image/") ? (
+                            <img src={msg.attachment} className="max-w-full rounded-2xl border border-white/10 shadow-lg" alt="Ek" />
+                          ) : (
+                            <a href={msg.attachment} download={msg.attachmentName} className="text-[10px] font-black uppercase bg-black/40 px-4 py-3 rounded-xl block text-center border border-white/5 hover:bg-black/60 tracking-[0.2em] transition-all">
+                              📁 {msg.attachmentName || "BELGEYİ İNDİR"}
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </div>
+
+        {/* ALT PANEL: METİN VE DOSYA GİRİŞ MERKEZİ */}
+        <form onSubmit={handleSendMessage} className="p-8 border-t border-gray-800/60 bg-[#0c1222]/90 backdrop-blur-2xl z-20">
+          <div className="max-w-5xl mx-auto flex flex-col gap-4">
+            
+            {/* DOSYA KUYRUĞU GÖSTERGESİ */}
+            {attachmentName && (
+              <div className="bg-blue-950/40 border border-blue-500/30 px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-blue-400 flex justify-between items-center animate-in slide-in-from-bottom-4">
+                <span className="flex items-center gap-3">📎 Kuyruktaki Sinyal: <strong className="text-white">{attachmentName}</strong></span>
+                <button type="button" onClick={() => { setAttachment(""); setAttachmentName(""); }} className="bg-red-500/20 text-red-400 w-6 h-6 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-all font-bold">×</button>
+              </div>
+            )}
+
+            <div className="flex gap-4 relative">
+              {/* DOSYA EKLEME (CLIP) BUTONU */}
+              <label className="bg-gray-800/60 hover:bg-gray-700 text-gray-500 hover:text-blue-400 px-5 flex items-center justify-center rounded-[1.3rem] border border-gray-700 cursor-pointer transition-all shadow-inner group">
+                <span className="text-xl group-hover:scale-110 transition-transform">📎</span>
+                <input type="file" onChange={handleFileChange} className="hidden" />
+              </label>
+
+              <input 
+                type="text" 
+                value={textInput} 
+                onChange={(e) => setTextInput(e.target.value)} 
+                placeholder="Kabileye anlık sinyal gönder veya dosya fırlat..." 
+                className="flex-1 bg-gray-900/60 border border-gray-800 rounded-[1.3rem] pl-7 pr-32 py-5 text-sm text-white outline-none focus:border-blue-500/50 focus:bg-gray-800/40 transition-all font-medium placeholder-gray-600 shadow-inner"
+                autoComplete="off"
+              />
+              
+              <button 
+                type="submit" 
+                disabled={isSending || (!textInput.trim() && !attachment)} 
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-800 disabled:text-gray-600 disabled:opacity-50 text-white font-black px-8 py-3 rounded-xl text-[10px] uppercase tracking-[0.2em] transition-all shadow-lg active:scale-95"
+              >
+                {isSending ? "..." : "SİNYAL"}
+              </button>
+            </div>
+          </div>
+        </form>
       </main>
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #334155; }
+      `}</style>
     </div>
   );
 }
-
-// React Component for Video rendering
-const VideoPlayer = ({ stream, peerId }) => {
-  const ref = useRef();
-  useEffect(() => { if (ref.current) ref.current.srcObject = stream; }, [stream]);
-  return (
-    <div className="relative bg-gray-800 rounded-2xl overflow-hidden border border-gray-700 aspect-video shadow-lg">
-      <video ref={ref} autoPlay playsInline className="w-full h-full object-cover" />
-      <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-[9px] font-bold text-white truncate max-w-[80%]">Sinerji Üyesi</div>
-    </div>
-  );
-};
