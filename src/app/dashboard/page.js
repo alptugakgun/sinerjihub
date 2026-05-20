@@ -4,23 +4,21 @@ import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import { Toaster, toast } from "react-hot-toast";
+import ReactMarkdown from "react-markdown";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const messagesEndRef = useRef(null);
   const socket = useRef();
 
   // --- TEMEL DURUMLAR (STATES) ---
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [posts, setPosts] = useState([]);
-  const [hubs, setHubs] = useState([]);
   
   // --- BİLDİRİM VE ARKADAŞLIK DURUMLARI ---
   const [notifications, setNotifications] = useState([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [friendRequests, setFriendRequests] = useState([]);
-  const [recommendations, setRecommendations] = useState([]);
   
   // --- YORUM (YANKI) SİSTEMİ DURUMLARI ---
   const [openCommentsId, setOpenCommentsId] = useState(null);
@@ -34,46 +32,32 @@ export default function DashboardPage() {
   const [postTags, setPostTags] = useState("");
   const [isPosting, setIsPosting] = useState(false);
 
-  const [isHubModalOpen, setIsHubModalOpen] = useState(false);
-  const [hubForm, setHubForm] = useState({ name: "", category: "", description: "", icon: "🔥", isPrivate: false, passcode: "" });
-  const [isCreatingHub, setIsCreatingHub] = useState(false);
-
-  // --- DM (BİREBİR MESAJLAŞMA) DURUMLARI ---
-  const [isDmOpen, setIsDmOpen] = useState(false);
-  const [selectedUser, setSelectedUser] = useState(null);
-  const [dmMessages, setDmMessages] = useState([]);
-  const [newDm, setNewDm] = useState("");
-  const [arrivalMessage, setArrivalMessage] = useState(null);
-
   // --- ARAMA VE ETİKET (HASHTAG) DURUMLARI ---
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState(null); 
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  // --- HİKAYE (SİNYAL) SİSTEMİ DURUMLARI ---
+  const [showStoryModal, setShowStoryModal] = useState(false);
+  const [newStory, setNewStory] = useState("");
+  const [stories, setStories] = useState([
+    { id: 1, username: 'sinerji_bot', avatar: '🤖', content: 'Sistem yepyeni, premium kurumsal tasarıma geçirildi! 🚀', time: '1s önce' },
+    { id: 2, username: 'kurucu_deniz', avatar: '👑', content: 'Prussian Blue ve Amber uyumu harika oldu.', time: '2s önce' }
+  ]);
 
+  // --- ETKİNLİK SİSTEMİ VERİSİ ---
+  const events = [
+    { id: 1, title: 'Node.js Backend Kampı', time: 'Bugün 20:00', attendees: 12 },
+    { id: 2, title: 'Gravimetrik Analiz Çözümleri', time: 'Yarın 15:00', attendees: 8 }
+  ];
+
+  // --- 1. SOCKET VE BİLDİRİM DİNLEYİCİSİ ---
   useEffect(() => {
     socket.current = io("https://sinerjihub-1.onrender.com");
 
-    socket.current.on("getDm", (data) => {
-      setArrivalMessage({
-        sender: data.sender,
-        content: data.content,
-        createdAt: Date.now(),
-      });
-      toast('Sinyal: Yeni bir DM aldın! 💬', {
-        style: { borderRadius: '1rem', background: '#1f2937', color: '#fff', border: '1px solid #374151', fontSize: '12px', fontWeight: 'bold' },
-      });
-    });
-
-    // --- YENİ EKLENEN: CANLI BİLDİRİM DİNLEYİCİSİ ---
     socket.current.on("getNotification", (data) => {
-      // 1. Sağ üstte anlık toast mesajı patlat
       toast(`🔔 ${data.message}`, {
-        style: { borderRadius: '1rem', background: '#2563eb', color: '#fff', border: '1px solid #1e3a8a', fontSize: '12px', fontWeight: 'black', letterSpacing: '0.5px' },
+        style: { borderRadius: '0.5rem', background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00', fontSize: '12px', fontWeight: 'bold' },
       });
-      // 2. Arayüzdeki bildirim listesini anlık olarak güncelle (Kırmızı nokta yansın)
       setNotifications(prev => [{ _id: Date.now(), message: data.message, isRead: false }, ...prev]);
     });
 
@@ -88,12 +72,7 @@ export default function DashboardPage() {
     };
   }, [openCommentsId]);
 
-  useEffect(() => {
-    if (arrivalMessage && selectedUser && arrivalMessage.sender === selectedUser._id) {
-      setDmMessages((prev) => [...prev, arrivalMessage]);
-    }
-  }, [arrivalMessage, selectedUser]);
-
+  // --- 2. VERİ ÇEKME MOTORU ---
   useEffect(() => {
     const fetchData = async () => {
       const userId = localStorage.getItem("userId");
@@ -109,17 +88,11 @@ export default function DashboardPage() {
         const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
         setPosts(await postsRes.json());
 
-        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
-        setHubs(await hubsRes.json());
-
         const notifRes = await fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`);
         setNotifications(await notifRes.json());
 
         const friendRes = await fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`);
         setFriendRequests(await friendRes.json());
-
-        const recRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/recommendations/${userId}`);
-        setRecommendations(await recRes.json());
 
       } catch (error) { 
         console.error("Veri yüklenirken hata oluştu:", error); 
@@ -130,60 +103,41 @@ export default function DashboardPage() {
     fetchData();
   }, [router]);
 
-  // --- ROZET (BADGE) RENDER MOTORU ---
+  // --- HİKAYE (SİNYAL) EKLEME MOTORU ---
+  const handleAddStory = (e) => {
+    e.preventDefault();
+    if(!newStory.trim()) return;
+    const newStoryObj = {
+       id: Date.now(),
+       username: user?.username,
+       avatar: user?.profilePicture ? user.profilePicture : user?.username?.[0].toUpperCase(),
+       content: newStory,
+       time: 'Şimdi'
+    };
+    setStories([newStoryObj, ...stories]);
+    setNewStory("");
+    setShowStoryModal(false);
+    toast.success("Anlık Sinyal fırlatıldı! (24 Saat Aktif)", { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #005700' } });
+  };
+
   const renderBadges = (roles) => {
     if (!roles || roles.length === 0) return null;
     return roles.map((role, idx) => {
       if (role === "Gezgin") return null; 
-      
-      let style = "bg-gray-800 text-gray-400 border-gray-700";
+      let style = "bg-[#F2F3D9]/10 text-[#F2F3D9]/70 border-[#F2F3D9]/20";
       let icon = "•";
       
-      if (role === "Kurucu") { style = "bg-orange-500/10 text-orange-400 border-orange-500/30 shadow-[0_0_10px_rgba(245,158,11,0.2)]"; icon = "👑"; }
-      if (role === "Moderatör") { style = "bg-blue-500/10 text-blue-400 border-blue-500/30 shadow-[0_0_10px_rgba(59,130,246,0.2)]"; icon = "🛡️"; }
-      if (role === "Gamer") { style = "bg-purple-500/10 text-purple-400 border-purple-500/30 shadow-[0_0_10px_rgba(168,85,247,0.2)]"; icon = "🎮"; }
-      if (role === "Kemik Tayfa") { style = "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]"; icon = "💎"; }
+      if (role === "Kurucu") { style = "bg-[#520000] text-[#F2F3D9] border-[#520000]"; icon = "👑"; }
+      if (role === "Moderatör") { style = "bg-[#005700] text-[#F2F3D9] border-[#005700]"; icon = "🛡️"; }
+      if (role === "Gamer") { style = "bg-[#DE7A00]/20 text-[#DE7A00] border-[#DE7A00]/40"; icon = "🎮"; }
+      if (role === "Kemik Tayfa") { style = "bg-[#F2F3D9] text-[#030027] border-[#F2F3D9]"; icon = "💎"; }
       
       return (
-        <span key={idx} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[9px] font-black uppercase tracking-widest border ${style} ml-2 animate-in fade-in duration-500`}>
+        <span key={idx} className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${style} ml-2`}>
           {icon} {role}
         </span>
       );
     });
-  };
-
-  // --- KABİLE KURMA FONKSİYONU ---
-  const handleCreateHub = async (e) => {
-    e.preventDefault();
-    if (user?.karmaPoints < 50 && !user?.roles?.includes("Kurucu")) {
-      toast.error("Bunun için en az 50 Karma (Ağ Gezgini) olmalısın!", { style: { background: '#7f1d1d', color: '#fff' } });
-      return;
-    }
-    
-    setIsCreatingHub(true);
-    const userId = localStorage.getItem("userId");
-
-    try {
-      const res = await fetch("https://sinerjihub-1.onrender.com/api/hubs/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...hubForm, creatorId: userId }),
-      });
-      const data = await res.json();
-      
-      if (res.ok) {
-        setHubs([...hubs, data]);
-        setUser({ ...user, hubs: [...(user.hubs || []), data._id] });
-        setIsHubModalOpen(false);
-        setHubForm({ name: "", category: "", description: "", icon: "🔥", isPrivate: false, passcode: "" });
-        toast.success(`${data.name} kabilesi başarıyla inşa edildi!`, { style: { background: '#1f2937', color: '#fff' } });
-      } else {
-        toast.error(data.message || "Kabile kurulamadı.", { style: { background: '#7f1d1d', color: '#fff' } });
-      }
-    } catch (err) {
-      toast.error("Sunucu bağlantı hatası.", { style: { background: '#7f1d1d', color: '#fff' } });
-    }
-    setIsCreatingHub(false);
   };
 
   const fetchComments = async (postId) => {
@@ -223,11 +177,9 @@ export default function DashboardPage() {
             }));
             setCommentInput("");
             setUser({ ...user, karmaPoints: (user.karmaPoints || 0) + 2 });
-            toast.success("Yankı fırlatıldı! +2 Karma", { style: { background: '#1f2937', color: '#fff' } });
-            
+            toast.success("Yankı fırlatıldı! +2 Karma", { style: { background: '#005700', color: '#F2F3D9' } });
             socket.current.emit("newPostComment", { postId });
-
-            // --- YENİ EKLENEN: İLAN SAHİBİNE CANLI YORUM BİLDİRİMİ FIRLAT ---
+            
             const targetPost = posts.find(p => p._id === postId);
             if (targetPost && targetPost.user !== userId) {
               socket.current.emit("sendNotification", {
@@ -242,14 +194,12 @@ export default function DashboardPage() {
     setIsCommenting(false);
   };
 
-  // --- SOSYAL VE DM FONKSİYONLARI ---
   const handleSendFriendRequest = async (targetId) => {
     const userId = localStorage.getItem("userId");
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, { method: "POST" });
       const data = await res.json();
-      toast.success(data.message, { style: { background: '#1f2937', color: '#fff' } });
-      setRecommendations(recommendations.filter(rec => rec._id !== targetId));
+      toast.success(data.message, { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00' } });
     } catch (err) { alert("İstek gönderilemedi."); }
   };
 
@@ -258,12 +208,11 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/accept/${userId}/${friendId}`, { method: "POST" });
       if (res.ok) {
-        toast.success("Artık arkadaşsınız! ✨", { style: { background: '#1f2937', color: '#fff' } });
+        toast.success("Artık arkadaşsınız! ✨", { style: { background: '#005700', color: '#F2F3D9' } });
         setFriendRequests(friendRequests.filter(req => req._id !== friendId));
         const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
         setUser(updatedUser);
 
-        // --- YENİ EKLENEN: KABUL EDİLEN KİŞİYE CANLI BİLDİRİM FIRLAT ---
         socket.current.emit("sendNotification", {
           senderId: userId,
           receiverId: friendId,
@@ -274,37 +223,6 @@ export default function DashboardPage() {
     } catch (err) { alert("İstek kabul edilemedi."); }
   };
 
-  const openChat = async (targetId, targetUsername) => {
-    const userId = localStorage.getItem("userId");
-    setSelectedUser({ _id: targetId, username: targetUsername });
-    setIsDmOpen(true);
-    try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/messages/between/${userId}/${targetId}`);
-      const data = await res.json();
-      setDmMessages(data);
-    } catch (err) { console.error("Mesajlar yüklenemedi."); }
-  };
-
-  const handleSendDm = async (e) => {
-    e.preventDefault();
-    if (!newDm.trim()) return;
-    const userId = localStorage.getItem("userId");
-    socket.current.emit("sendDm", { senderId: userId, receiverId: selectedUser._id, content: newDm });
-    try {
-      const res = await fetch("https://sinerjihub-1.onrender.com/api/messages/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ senderId: userId, receiverId: selectedUser._id, content: newDm }),
-      });
-      if (res.ok) {
-        const savedMsg = await res.json();
-        setDmMessages((prev) => [...prev, savedMsg]);
-        setNewDm("");
-      }
-    } catch (err) { alert("Mesaj gönderilemedi."); }
-  };
-
-  // --- İLAN FONKSİYONLARI ---
   const handleCreatePost = async (e) => {
     e.preventDefault();
     setIsPosting(true);
@@ -321,7 +239,7 @@ export default function DashboardPage() {
         setPosts([newPost, ...posts]);
         setPostContent(""); setPostTags(""); setIsModalOpen(false);
         setUser({ ...user, karmaPoints: (user.karmaPoints || 0) + 5 });
-        toast.success("İlan başarıyla yayınlandı! +5 Karma", { style: { background: '#1f2937', color: '#fff' } });
+        toast.success("İlan başarıyla yayınlandı! +5 Karma", { style: { background: '#005700', color: '#F2F3D9' } });
       }
     } catch (err) { alert("İlan paylaşılamadı."); }
     setIsPosting(false);
@@ -337,10 +255,7 @@ export default function DashboardPage() {
       });
       if (res.ok) {
         setPosts(posts.map(p => p._id === postId ? { ...p, upvotes: [...(p.upvotes || []), userId] } : p));
-        
-        // --- YENİ EKLENEN: İLAN SAHİBİNE CANLI DESTEK BİLDİRİMİ FIRLAT ---
         const targetPost = posts.find(p => p._id === postId);
-        // Kendi ilanını beğenmediyse ve daha önce beğenmemişse bildirim at
         if (targetPost && targetPost.user !== userId && !targetPost.upvotes?.includes(userId)) {
           socket.current.emit("sendNotification", {
             senderId: userId,
@@ -353,25 +268,6 @@ export default function DashboardPage() {
     } catch (err) { console.error(err); }
   };
 
-  const handleJoinHub = async (hubId) => {
-    const userId = localStorage.getItem("userId");
-    try {
-      const res = await fetch("https://sinerjihub-1.onrender.com/api/hubs/join", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, hubId }),
-      });
-      if (res.ok) {
-        toast.success("Kabileye başarıyla katıldın!", { style: { background: '#1f2937', color: '#fff' } });
-        setUser({ ...user, hubs: [...(user.hubs || []), hubId], karmaPoints: (user.karmaPoints || 0) + 10 });
-      } else {
-          const data = await res.json();
-          toast.error(data.message, { style: { background: '#7f1d1d', color: '#fff' } });
-      }
-    } catch (err) { console.error(err); }
-  };
-
-  // --- DİNAMİK TREND ALGORİTMASI ---
   const getTrendingTags = () => {
     const tagCounts = {};
     posts.forEach(post => {
@@ -382,44 +278,33 @@ export default function DashboardPage() {
         });
       }
     });
-    return Object.entries(tagCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([tag, count]) => ({ tag, count }));
+    return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([tag, count]) => ({ tag, count }));
   };
   const trendingTags = getTrendingTags();
 
-  // --- YARDIMCI VE FİLTRELEME FONKSİYONLARI ---
   const formatDate = (dateString) => {
     return new Date(dateString).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
   const getKarmaRank = (karma) => {
-    if (karma < 50) return { title: "Sinerji Çaylağı", icon: "🌱", color: "text-green-400", border: "border-green-500/30", bg: "bg-green-500/10" };
-    if (karma < 150) return { title: "Ağ Gezgini", icon: "🌍", color: "text-blue-400", border: "border-blue-500/30", bg: "bg-blue-500/10" };
-    if (karma < 500) return { title: "Sistem Katalizörü", icon: "⚡", color: "text-purple-400", border: "border-purple-500/30", bg: "bg-purple-500/10" };
-    return { title: "Ekosistem Lideri", icon: "👑", color: "text-yellow-400", border: "border-yellow-500/30", bg: "bg-yellow-500/10" };
+    if (karma < 50) return { title: "Sinerji Çaylağı", icon: "🌱", color: "text-[#005700]", border: "border-[#005700]/30", bg: "bg-[#005700]/10" };
+    if (karma < 150) return { title: "Ağ Gezgini", icon: "🌍", color: "text-[#DE7A00]", border: "border-[#DE7A00]/30", bg: "bg-[#DE7A00]/10" };
+    if (karma < 500) return { title: "Sistem Katalizörü", icon: "⚡", color: "text-[#F2F3D9]", border: "border-[#F2F3D9]/30", bg: "bg-[#F2F3D9]/10" };
+    return { title: "Ekosistem Lideri", icon: "👑", color: "text-[#520000]", border: "border-[#520000]/30", bg: "bg-[#520000]/10" };
   };
-
-  const filteredHubs = hubs.filter(hub => 
-    hub.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    hub.category.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   const filteredPosts = posts.filter(post => {
     const matchesSearch = post.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           post.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           (post.tags && post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())));
-    
     const matchesTag = selectedTag ? (post.tags && post.tags.some(tag => tag.toLowerCase() === selectedTag.toLowerCase())) : true;
-    
     return matchesSearch && matchesTag;
   });
 
   if (isLoading) return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center text-white flex-col">
-      <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="text-gray-400 font-medium tracking-widest uppercase text-xs">Sinerji Yükleniyor...</p>
+    <div className="min-h-screen bg-[#030027] flex items-center justify-center text-[#F2F3D9] flex-col">
+      <div className="w-12 h-12 border-4 border-[#DE7A00] border-t-transparent rounded-full animate-spin mb-4"></div>
+      <p className="font-bold tracking-widest uppercase text-xs">Ağ Kuruluyor...</p>
     </div>
   );
 
@@ -427,58 +312,47 @@ export default function DashboardPage() {
   const userRank = getKarmaRank(user?.karmaPoints || 0);
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white flex relative overflow-hidden font-sans pb-20 md:pb-0">
-      
+    <div className="min-h-screen flex relative overflow-hidden font-sans pb-20 md:pb-0 bg-[#030027] text-[#F2F3D9]">
       <Toaster position="top-center" reverseOrder={false} />
 
-      {/* --- DM PENCERESİ --- */}
-      {isDmOpen && (
-        <div className="fixed bottom-0 right-0 md:right-6 w-full md:w-80 bg-gray-800 border border-gray-700 rounded-t-2xl shadow-2xl z-[70] flex flex-col h-[450px] animate-in slide-in-from-bottom duration-300">
-          <div className="p-4 border-b border-gray-700 flex justify-between items-center bg-blue-600 rounded-t-2xl">
-            <span className="font-bold text-xs uppercase tracking-widest flex items-center gap-2">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span> 💬 {selectedUser?.username}
-            </span>
-            <button onClick={() => setIsDmOpen(false)} className="text-white text-xl hover:text-gray-200 transition-colors">×</button>
+      {/* --- SİNYAL (HİKAYE) EKLEME MODALI --- */}
+      {showStoryModal && (
+        <div className="fixed inset-0 bg-[#030027]/90 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
+            <h3 className="text-xl font-bold mb-2 text-[#F2F3D9]">Anlık Sinyal Fırlat</h3>
+            <p className="text-[11px] text-[#F2F3D9]/60 mb-6">Sinyaller 24 saat sonra sistemden silinir.</p>
+            <form onSubmit={handleAddStory} className="space-y-4">
+              <input type="text" value={newStory} onChange={(e) => setNewStory(e.target.value)} className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl p-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" placeholder="Neler oluyor?" required />
+              <button className="w-full bg-[#DE7A00] py-3.5 rounded-xl font-bold text-sm text-[#030027] hover:bg-[#c26a00] transition-colors">YAYINLA</button>
+              <button type="button" onClick={() => setShowStoryModal(false)} className="w-full text-[#F2F3D9]/50 text-xs font-bold mt-2 hover:text-[#F2F3D9]">Vazgeç</button>
+            </form>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-900/40 custom-scrollbar">
-            {dmMessages.map((msg, i) => (
-              <div key={i} className={`flex ${msg.sender === user?._id ? "justify-end" : "justify-start"}`}>
-                <div className={`max-w-[85%] px-3 py-2 rounded-xl text-xs leading-relaxed shadow-md ${msg.sender === user?._id ? "bg-blue-600 text-white rounded-tr-none" : "bg-gray-700 text-gray-200 rounded-tl-none border border-gray-600/50"}`}>
-                  {msg.content}
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-          <form onSubmit={handleSendDm} className="p-3 border-t border-gray-700 bg-gray-800">
-            <input type="text" value={newDm} onChange={(e) => setNewDm(e.target.value)} placeholder="Mesaj yaz..." className="w-full bg-gray-900 border border-gray-700 rounded-full px-4 py-2 text-xs outline-none focus:border-blue-500 transition-all shadow-inner" autoComplete="off" />
-          </form>
         </div>
       )}
 
       {/* --- BİLDİRİM PANELİ --- */}
       {isNotifOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[80] flex justify-end">
-          <div className="w-full md:w-80 bg-gray-800 h-full p-6 border-l border-gray-700 overflow-y-auto animate-in slide-in-from-right duration-300 custom-scrollbar">
-            <div className="flex justify-between items-center mb-8">
-              <h3 className="font-black text-lg tracking-tighter italic text-white">SİNERJİ AKIŞI</h3>
-              <button onClick={() => setIsNotifOpen(false)} className="text-2xl text-gray-500 hover:text-white transition-colors">&times;</button>
+        <div className="fixed inset-0 bg-[#030027]/80 backdrop-blur-sm z-[80] flex justify-end">
+          <div className="w-full md:w-80 bg-[#02001a] h-full p-6 border-l border-[#F2F3D9]/10 overflow-y-auto animate-in slide-in-from-right duration-300 custom-scrollbar">
+            <div className="flex justify-between items-center mb-8 border-b border-[#F2F3D9]/10 pb-4">
+              <h3 className="font-bold text-lg text-[#F2F3D9]">Sinerji Akışı</h3>
+              <button onClick={() => setIsNotifOpen(false)} className="text-2xl text-[#F2F3D9]/50 hover:text-[#DE7A00] transition-colors">&times;</button>
             </div>
             
             <div className="mb-8">
-              <h4 className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mb-4">Yeni İstekler</h4>
-              {friendRequests.length === 0 ? <p className="text-gray-600 text-[10px] font-medium uppercase">Bekleyen istek yok.</p> : friendRequests.map(req => (
-                <div key={req._id} className="bg-gray-900/50 p-4 rounded-2xl border border-gray-700 mb-3">
-                  <p className="text-[11px] font-bold mb-3">{req.username.toUpperCase()} Seninle bağ kurmak istiyor.</p>
-                  <button onClick={() => handleAcceptFriend(req._id)} className="w-full bg-blue-600 text-[10px] font-black py-2 rounded-lg hover:bg-blue-500 transition-all">KABUL ET</button>
+              <h4 className="text-xs font-bold text-[#DE7A00] uppercase tracking-wider mb-4">Ağ İstekleri</h4>
+              {friendRequests.length === 0 ? <p className="text-[#F2F3D9]/50 text-xs">Bekleyen istek yok.</p> : friendRequests.map(req => (
+                <div key={req._id} className="bg-[#030027] p-4 rounded-xl border border-[#DE7A00]/30 mb-3">
+                  <p className="text-sm font-medium mb-3">{req.username} bağlantı kurmak istiyor.</p>
+                  <button onClick={() => handleAcceptFriend(req._id)} className="w-full bg-[#DE7A00] text-[#030027] text-xs font-bold py-2.5 rounded-lg hover:bg-[#c26a00] transition-colors">KABUL ET</button>
                 </div>
               ))}
             </div>
 
             <div>
-              <h4 className="text-[10px] font-black text-purple-400 uppercase tracking-[0.2em] mb-4">Son Etkinlikler</h4>
-              {notifications.length === 0 ? <p className="text-gray-600 text-[10px] font-medium uppercase">Henüz bildirim yok.</p> : notifications.map(n => (
-                <div key={n._id} className="bg-gray-800 border border-gray-700 p-3 rounded-xl mb-2 text-[10px] text-gray-400 leading-relaxed font-medium animate-in fade-in">
+              <h4 className="text-xs font-bold text-[#F2F3D9]/70 uppercase tracking-wider mb-4">Etkinlikler</h4>
+              {notifications.length === 0 ? <p className="text-[#F2F3D9]/50 text-xs">Henüz bildirim yok.</p> : notifications.map(n => (
+                <div key={n._id} className="bg-[#030027] border border-[#F2F3D9]/10 p-4 rounded-xl mb-2 text-xs text-[#F2F3D9]/80 leading-relaxed">
                   {n.message}
                 </div>
               ))}
@@ -489,155 +363,159 @@ export default function DashboardPage() {
 
       {/* --- İLAN AÇMA MODALI --- */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[90] flex items-center justify-center p-4">
-          <div className="bg-gray-800 border border-gray-700 rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in duration-200">
-            <h3 className="text-2xl font-black mb-6 tracking-tight text-white">Yeni İlan Çağrısı 🚀</h3>
+        <div className="fixed inset-0 bg-[#030027]/90 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
+            <h3 className="text-2xl font-bold mb-2 text-[#F2F3D9]">Yeni İlan Yarat</h3>
+            <p className="text-xs text-[#F2F3D9]/60 mb-6">Kod blokları için ``` kullanabilirsin.</p>
             <form onSubmit={handleCreatePost} className="space-y-4">
-              <textarea value={postContent} onChange={(e) => setPostContent(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm text-white outline-none focus:border-blue-500 h-32 resize-none" placeholder="Ne arıyorsun? Bir çalışma ortağı mı?" required />
-              <input type="text" value={postTags} onChange={(e) => setPostTags(e.target.value)} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm text-white outline-none focus:border-blue-500" placeholder="Etiketler (örneğin: Kimya, Yazılım)" />
-              <button disabled={isPosting} className="w-full bg-blue-600 py-4 rounded-2xl font-black text-sm text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-900/20">{isPosting ? "GÖNDERİLİYOR..." : "YAYINLA"}</button>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="w-full text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-2 hover:text-gray-300">Vazgeç</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- KABİLE KURMA MODALI --- */}
-      {isHubModalOpen && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[90] flex items-center justify-center p-4">
-          <div className="bg-gray-800 border border-indigo-500/30 rounded-[2.5rem] p-8 w-full max-w-lg shadow-2xl animate-in zoom-in duration-200 relative overflow-hidden">
-            <div className="absolute -right-10 -top-10 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl -z-10"></div>
-            <h3 className="text-2xl font-black mb-6 tracking-tight text-white flex items-center gap-2">
-              Kendi Kabileni İnşa Et 👑
-            </h3>
-            <form onSubmit={handleCreateHub} className="space-y-4 relative z-10">
-              <div className="flex gap-4">
-                <input type="text" required value={hubForm.icon} onChange={(e) => setHubForm({...hubForm, icon: e.target.value})} className="w-16 bg-gray-900 border border-gray-700 rounded-2xl p-4 text-center text-2xl text-white outline-none focus:border-indigo-500" placeholder="🔥" />
-                <input type="text" required value={hubForm.name} onChange={(e) => setHubForm({...hubForm, name: e.target.value})} className="flex-1 bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500" placeholder="Kabile Adı (Örn: LGS Çalışma Kampı)" />
-              </div>
-              <input type="text" required value={hubForm.category} onChange={(e) => setHubForm({...hubForm, category: e.target.value})} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500" placeholder="Kategori (Örn: Kimya, Yazılım)" />
-              <textarea required value={hubForm.description} onChange={(e) => setHubForm({...hubForm, description: e.target.value})} className="w-full bg-gray-900 border border-gray-700 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500 h-24 resize-none" placeholder="Bu odanın amacı nedir?" />
-              
-              <div className="flex items-center gap-3 bg-gray-900/50 p-4 rounded-2xl border border-gray-700">
-                <input type="checkbox" id="isPrivate" checked={hubForm.isPrivate} onChange={(e) => setHubForm({...hubForm, isPrivate: e.target.checked})} className="w-4 h-4 accent-indigo-500" />
-                <label htmlFor="isPrivate" className="text-sm font-bold text-gray-300 cursor-pointer">Bu kabile şifreli ve özel olsun 🔒</label>
-              </div>
-
-              {hubForm.isPrivate && (
-                <input type="text" required value={hubForm.passcode} onChange={(e) => setHubForm({...hubForm, passcode: e.target.value})} className="w-full bg-indigo-900/20 border border-indigo-500/50 rounded-2xl p-4 text-sm text-indigo-300 outline-none focus:border-indigo-400 placeholder-indigo-500/50 font-mono tracking-widest" placeholder="Giriş Şifresi Belirle" />
-              )}
-
-              <button disabled={isCreatingHub} className="w-full bg-indigo-600 py-4 rounded-2xl font-black text-sm text-white hover:bg-indigo-500 transition-all shadow-lg shadow-indigo-900/20 mt-2">{isCreatingHub ? "İNŞA EDİLİYOR..." : "KABİLEYİ YARAT"}</button>
-              <button type="button" onClick={() => setIsHubModalOpen(false)} className="w-full text-gray-500 text-[10px] font-bold uppercase tracking-widest mt-2 hover:text-gray-300">Vazgeç</button>
+              <textarea value={postContent} onChange={(e) => setPostContent(e.target.value)} className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl p-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] h-32 resize-none transition-colors" placeholder="İçeriği buraya girin..." required />
+              <input type="text" value={postTags} onChange={(e) => setPostTags(e.target.value)} className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl p-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" placeholder="Etiketler (Yazılım, Kimya)" />
+              <button disabled={isPosting} className="w-full bg-[#DE7A00] py-4 rounded-xl font-bold text-sm text-[#030027] hover:bg-[#c26a00] transition-colors mt-2">{isPosting ? "GÖNDERİLİYOR..." : "YAYINLA"}</button>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="w-full text-[#F2F3D9]/50 text-xs font-bold mt-2 hover:text-[#F2F3D9] transition-colors">İptal Et</button>
             </form>
           </div>
         </div>
       )}
 
       {/* --- SIDEBAR --- */}
-      <aside className="w-72 bg-gray-800/40 border-r border-gray-700/50 hidden md:flex flex-col p-8 backdrop-blur-2xl h-screen sticky top-0 z-10">
-        <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-500 mb-12 tracking-tighter italic">SINERJIHUB</h1>
+      <aside className="w-72 bg-[#02001a] border-r border-[#F2F3D9]/10 hidden md:flex flex-col p-8 h-screen sticky top-0 z-10">
+        <h1 className="text-2xl font-bold text-[#F2F3D9] mb-12 tracking-wide">
+          SINERJI<span className="text-[#DE7A00]">HUB</span>
+        </h1>
         <nav className="flex-1 space-y-2">
-          <Link href="/dashboard" className="flex items-center gap-4 bg-blue-600/10 px-5 py-4 rounded-2xl border border-blue-500/20 group">
-            <span className="text-xl">🏠</span> <span className="font-bold text-sm text-white">Ana Üs</span>
+          <Link href="/dashboard" className="flex items-center gap-4 bg-[#F2F3D9]/10 px-5 py-4 rounded-xl border border-[#F2F3D9]/20">
+            <span className="text-lg">🏠</span> <span className="font-semibold text-sm text-[#F2F3D9]">Ana Üs</span>
           </Link>
-          <button onClick={() => setIsNotifOpen(true)} className="w-full flex items-center gap-4 text-gray-400 hover:bg-gray-700/30 px-5 py-4 rounded-2xl relative transition-all group">
-            <span className="text-xl group-hover:scale-110">🔔</span> <span className="font-medium text-sm">Akış</span>
-            {totalNotifs > 0 && <span className="absolute right-4 bg-red-500 w-2 h-2 rounded-full animate-ping"></span>}
+          <Link href="/explore" className="flex items-center gap-4 text-[#F2F3D9]/60 hover:bg-[#F2F3D9]/5 px-5 py-4 rounded-xl transition-colors">
+            <span className="text-lg">🧭</span> <span className="font-medium text-sm">Keşfet</span>
+          </Link>
+          <Link href="/messages" className="flex items-center gap-4 text-[#F2F3D9]/60 hover:bg-[#F2F3D9]/5 px-5 py-4 rounded-xl transition-colors">
+            <span className="text-lg">💬</span> <span className="font-medium text-sm">Sinyaller</span>
+          </Link>
+          <button onClick={() => setIsNotifOpen(true)} className="w-full flex items-center gap-4 text-[#F2F3D9]/60 hover:bg-[#F2F3D9]/5 px-5 py-4 rounded-xl relative transition-colors">
+            <span className="text-lg">🔔</span> <span className="font-medium text-sm">Akış</span>
+            {totalNotifs > 0 && <span className="absolute right-4 bg-[#DE7A00] w-2 h-2 rounded-full"></span>}
           </button>
-          <Link href="/profile" className="flex items-center gap-4 text-gray-400 hover:bg-gray-700/30 px-5 py-4 rounded-2xl transition-all group">
-            <span className="text-xl group-hover:rotate-12">👤</span> <span className="font-medium text-sm">Profil</span>
+          <Link href="/profile" className="flex items-center gap-4 text-[#F2F3D9]/60 hover:bg-[#F2F3D9]/5 px-5 py-4 rounded-xl transition-colors">
+            <span className="text-lg">👤</span> <span className="font-medium text-sm">Profil</span>
           </Link>
         </nav>
         
-        <div className="mt-auto pt-8 border-t border-gray-700/50 flex flex-col gap-4">
-          <div className={`flex items-center gap-2 ${userRank.bg} border ${userRank.border} p-3 rounded-2xl justify-center shadow-inner`}>
-            <span className="text-lg">{userRank.icon}</span>
-            <span className={`text-[10px] font-black uppercase tracking-widest ${userRank.color}`}>{userRank.title}</span>
-          </div>
-          <div className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-2xl border border-gray-700/50">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm border-2 border-white/10 overflow-hidden bg-gradient-to-tr from-blue-600 to-indigo-600">
+        <div className="mt-6 pt-6 border-t border-[#F2F3D9]/10 flex flex-col gap-4">
+          <div className="flex items-center gap-3 p-3 bg-[#F2F3D9]/5 rounded-xl border border-[#F2F3D9]/10">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center font-bold text-sm bg-[#030027] border border-[#DE7A00]/50 overflow-hidden text-[#DE7A00]">
               {user?.profilePicture ? <img src={user.profilePicture} className="w-full h-full object-cover" /> : user?.username?.[0].toUpperCase()}
             </div>
             <div>
-              <p className="text-[11px] font-black truncate text-gray-200">{user?.username.toUpperCase()}</p>
-              <p className="text-[9px] text-blue-400 font-black tracking-tighter">{user?.karmaPoints} KARMA</p>
+              <p className="text-xs font-bold text-[#F2F3D9]">{user?.username}</p>
+              <p className="text-[10px] text-[#DE7A00] font-semibold mt-0.5">{user?.karmaPoints} Puan</p>
             </div>
           </div>
-          <button onClick={() => { localStorage.removeItem("userId"); router.push("/login"); }} className="w-full text-red-500/70 text-[10px] font-black uppercase tracking-widest hover:text-red-400 py-3 transition-all">Sistemden Çık</button>
+          <button onClick={() => { localStorage.removeItem("userId"); router.push("/login"); }} className="w-full text-[#520000] text-xs font-bold hover:text-[#F2F3D9] py-3 transition-colors">Oturumu Kapat</button>
         </div>
       </aside>
 
       {/* --- ANA AKIŞ --- */}
-      <main className="flex-1 p-6 md:p-12 overflow-y-auto bg-grid-slate-900/[0.04]">
-        <header className="flex justify-between items-start mb-8">
+      <main className="flex-1 p-6 md:p-10 overflow-y-auto custom-scrollbar">
+        <header className="flex justify-between items-start mb-10 border-b border-[#F2F3D9]/10 pb-6">
           <div>
-            <h2 className="text-3xl md:text-4xl font-black tracking-tighter mb-2 italic text-white uppercase">
-              HOŞ GELDİN, {user?.username}! 👋
+            <h2 className="text-3xl font-bold text-[#F2F3D9] mb-2">
+              Hoş Geldin, {user?.username}.
             </h2>
-            <p className="text-gray-500 font-medium text-sm">Ekosistem bugün senin için neler hazırladı?</p>
+            <p className="text-[#F2F3D9]/60 text-sm">Ağındaki son gelişmeler ve trendler.</p>
           </div>
-          <button onClick={() => setIsModalOpen(true)} className="hidden md:block bg-blue-600 px-8 py-3.5 rounded-2xl font-black text-xs text-white tracking-widest shadow-xl hover:-translate-y-1 transition-all uppercase">Yeni İlan</button>
+          <button onClick={() => setIsModalOpen(true)} className="hidden md:block bg-[#DE7A00] px-6 py-3 rounded-xl font-bold text-sm text-[#030027] hover:bg-[#c26a00] transition-colors shadow-sm">İlan Oluştur</button>
         </header>
 
+        {/* HİKAYELER / ANLIK SİNYALLER BÖLÜMÜ */}
+        <div className="flex gap-6 overflow-x-auto pb-6 mb-8 custom-scrollbar items-center">
+            <button onClick={() => setShowStoryModal(true)} className="flex flex-col items-center gap-2 flex-shrink-0 group">
+               <div className="w-16 h-16 rounded-2xl bg-[#F2F3D9]/5 border border-dashed border-[#F2F3D9]/30 flex items-center justify-center text-2xl text-[#F2F3D9]/50 group-hover:border-[#DE7A00] group-hover:text-[#DE7A00] transition-colors">
+                  +
+               </div>
+               <span className="text-[10px] font-semibold text-[#F2F3D9]/60 group-hover:text-[#F2F3D9] transition-colors">Sinyal Ekle</span>
+            </button>
+
+            {stories.map(story => (
+               <div key={story.id} className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer" onClick={() => toast(story.content, { icon: '💬', style: {background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00'} })}>
+                  <div className="w-16 h-16 rounded-2xl bg-[#030027] border-2 border-[#DE7A00] flex items-center justify-center overflow-hidden font-bold text-xl text-[#F2F3D9]">
+                     {story.avatar.length > 5 ? <img src={story.avatar} className="w-full h-full object-cover"/> : story.avatar}
+                  </div>
+                  <span className="text-[10px] font-semibold text-[#F2F3D9]/80">{story.username}</span>
+               </div>
+            ))}
+        </div>
+
         {/* ARAMA BAR */}
-        <div className="mb-8">
+        <div className="mb-10">
           <div className="relative max-w-3xl">
-            <span className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500 text-xl">🔍</span>
-            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Kabile veya ilan ara..." className="w-full bg-gray-800/40 border border-gray-700/50 rounded-full pl-14 pr-12 py-5 text-sm text-white outline-none focus:border-blue-500/50 focus:bg-gray-800/80 transition-all shadow-inner backdrop-blur-sm" />
+            <span className="absolute left-5 top-1/2 -translate-y-1/2 text-[#F2F3D9]/50 text-lg">🔍</span>
+            <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="İlanlarda ara..." className="w-full bg-[#F2F3D9]/5 border border-[#F2F3D9]/10 rounded-xl pl-12 pr-6 py-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" />
           </div>
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
           {/* İLANLAR (POSTLAR) SOL KOLON */}
-          <div className="xl:col-span-2 space-y-8">
-            <div className="flex justify-between items-center">
-              <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3">
-                 SİNERJİ AKIŞI <span className="h-[1px] flex-1 bg-gray-800"></span>
-              </h3>
+          <div className="xl:col-span-2 space-y-6">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-lg font-bold text-[#F2F3D9]">Sinerji Akışı</h3>
             </div>
 
-            {/* AKTİF ETİKET FİLTRESİ UYARISI */}
             {selectedTag && (
-              <div className="bg-blue-600/20 border border-blue-500/50 px-6 py-4 rounded-2xl flex justify-between items-center animate-in fade-in slide-in-from-top-2">
-                <span className="text-sm font-bold text-blue-300">
-                  <span className="text-blue-500 mr-2">📌</span> 
-                  Şu an <strong className="text-white uppercase">#{selectedTag}</strong> sinerjilerini inceliyorsun.
+              <div className="bg-[#DE7A00]/10 border border-[#DE7A00]/30 px-5 py-3 rounded-xl flex justify-between items-center">
+                <span className="text-sm font-medium text-[#F2F3D9]">
+                  <span className="text-[#DE7A00] mr-2">#</span> 
+                  Şu an <strong>{selectedTag}</strong> etiketini inceliyorsun.
                 </span>
-                <button onClick={() => setSelectedTag(null)} className="text-[10px] bg-blue-600 hover:bg-blue-500 text-white font-black px-4 py-2 rounded-xl transition-all uppercase tracking-widest">
-                  Filtreyi Temizle
+                <button onClick={() => setSelectedTag(null)} className="text-[10px] bg-[#030027] border border-[#F2F3D9]/20 text-[#F2F3D9] font-bold px-3 py-1.5 rounded-md hover:border-[#DE7A00] transition-colors">
+                  Temizle
                 </button>
               </div>
             )}
             
             <div className="space-y-6">
               {filteredPosts.length === 0 ? (
-                <div className="text-center py-10 bg-gray-800/20 rounded-[2rem] border border-gray-800">
-                    <p className="text-gray-500 font-medium">Bu kriterlere uygun bir sinerji bulunamadı.</p>
+                <div className="text-center py-16 bg-[#F2F3D9]/5 rounded-2xl border border-[#F2F3D9]/10">
+                    <p className="text-[#F2F3D9]/50 text-sm">Kriterlere uygun ilan bulunamadı.</p>
                 </div>
               ) : (
                 filteredPosts.map(post => (
-                  <div key={post._id} className="bg-gray-800/30 border border-gray-700 p-6 rounded-[2rem] flex flex-col group hover:bg-gray-800/50 transition-all shadow-sm">
-                    <div className="flex justify-between items-center mb-4">
-                      
-                      {/* KULLANICI ADI VE ROZETLER */}
-                      <div className="flex items-center">
-                        <span className="text-blue-400 font-black text-[11px] uppercase tracking-tighter">@{post.username}</span>
-                        {/* ROZET MOTORU ÇAĞRILIYOR */}
+                  <div key={post._id} className="bg-[#02001a] border border-[#F2F3D9]/10 p-6 rounded-2xl flex flex-col">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="flex items-center flex-wrap gap-2">
+                        <span className="text-[#F2F3D9] font-bold text-sm">@{post.username}</span>
                         {renderBadges(post.roles || post.userRoles || [])}
                       </div>
-
-                      <span className="text-[9px] text-gray-600 font-bold uppercase">{formatDate(post.createdAt)}</span>
+                      <span className="text-xs text-[#F2F3D9]/40">{formatDate(post.createdAt)}</span>
                     </div>
-                    <p className="text-sm text-gray-300 mb-6 leading-relaxed font-medium">{post.content}</p>
+
+                    <div className="text-sm text-[#F2F3D9]/90 mb-6 leading-relaxed">
+                      <ReactMarkdown
+                         components={{
+                           code({node, inline, className, children, ...props}) {
+                             return !inline ? (
+                               <pre className="bg-[#030027] p-4 rounded-xl overflow-x-auto border border-[#F2F3D9]/10 my-4 text-xs text-[#F2F3D9] font-mono custom-scrollbar">
+                                 <code className={className} {...props}>{children}</code>
+                               </pre>
+                             ) : (
+                               <code className="bg-[#030027] border border-[#F2F3D9]/10 px-1.5 py-0.5 rounded text-[#DE7A00] font-mono text-xs" {...props}>{children}</code>
+                             )
+                           },
+                           strong: ({node, ...props}) => <strong className="text-white font-bold" {...props} />,
+                           em: ({node, ...props}) => <em className="text-[#F2F3D9]/70 italic" {...props} />,
+                         }}
+                      >
+                        {post.content}
+                      </ReactMarkdown>
+                    </div>
                     
                     {post.tags?.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-5">
+                      <div className="flex flex-wrap gap-2 mb-6">
                         {post.tags.map((tag, idx) => (
                           <button 
                             key={idx} 
                             onClick={() => setSelectedTag(tag)}
-                            className="text-[9px] font-black uppercase tracking-widest bg-gray-900 text-gray-400 border border-gray-700 hover:border-blue-500/50 hover:text-blue-300 px-3 py-1.5 rounded-lg transition-all"
+                            className="text-xs font-medium bg-[#F2F3D9]/5 text-[#F2F3D9]/70 border border-[#F2F3D9]/10 hover:border-[#DE7A00] hover:text-[#DE7A00] px-3 py-1 rounded-lg transition-colors"
                           >
                             #{tag}
                           </button>
@@ -645,47 +523,58 @@ export default function DashboardPage() {
                       </div>
                     )}
 
-                    <div className="flex gap-2 mt-auto pt-5 border-t border-gray-700/30">
-                      <button onClick={() => handleUpvote(post._id)} className="flex-1 bg-gray-700/20 py-3 rounded-2xl text-[10px] font-black hover:bg-blue-600/20 hover:text-blue-400 border border-transparent hover:border-blue-500/30 transition-all">🙌 {post.upvotes?.length || 0}</button>
+                    <div className="flex gap-3 mt-auto pt-4 border-t border-[#F2F3D9]/10">
+                      <button onClick={() => handleUpvote(post._id)} className="flex-1 bg-[#F2F3D9]/5 py-2.5 rounded-xl text-xs font-bold text-[#F2F3D9] hover:bg-[#DE7A00] hover:text-[#030027] transition-colors border border-transparent">Destek ({post.upvotes?.length || 0})</button>
                       
-                      {/* YANKI BUTONU */}
-                      <button onClick={() => toggleComments(post._id)} className={`flex-1 py-3 rounded-2xl text-[10px] font-black transition-all border border-transparent ${openCommentsId === post._id ? "bg-indigo-600/20 text-indigo-400 border-indigo-500/30" : "bg-gray-700/20 text-gray-400 hover:text-white"}`}>
-                          💬 YANKILAR {activeComments[post._id]?.length > 0 && `(${activeComments[post._id].length})`}
+                      <button onClick={() => toggleComments(post._id)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors border ${openCommentsId === post._id ? "bg-[#DE7A00]/10 text-[#DE7A00] border-[#DE7A00]/30" : "bg-[#F2F3D9]/5 text-[#F2F3D9] border-transparent hover:bg-[#F2F3D9]/10"}`}>
+                          Yankılar {activeComments[post._id]?.length > 0 && `(${activeComments[post._id].length})`}
                       </button>
 
                       {post.user !== user?._id && (
                         <>
-                          <button onClick={() => openChat(post.user, post.username)} className="bg-gray-700/20 px-4 py-3 rounded-2xl text-[10px] text-gray-400 hover:text-white">✉️</button>
+                          <button onClick={() => router.push('/messages')} className="bg-[#F2F3D9]/5 px-4 py-2.5 rounded-xl text-xs text-[#F2F3D9] hover:bg-[#F2F3D9]/10 transition-colors">✉️</button>
                           {!user?.friends?.includes(post.user) && (
-                            <button onClick={() => handleSendFriendRequest(post.user)} className="bg-gray-700/20 px-4 py-3 rounded-2xl text-[10px] text-blue-500">➕</button>
+                            <button onClick={() => handleSendFriendRequest(post.user)} className="bg-[#F2F3D9]/5 px-4 py-2.5 rounded-xl text-xs text-[#F2F3D9] hover:bg-[#F2F3D9]/10 transition-colors">➕</button>
                           )}
                         </>
                       )}
                     </div>
 
-                    {/* YANKI (YORUM) PANELİ */}
                     {openCommentsId === post._id && (
-                      <div className="mt-6 pt-6 border-t border-gray-700/50 animate-in slide-in-from-top duration-300">
-                          <div className="space-y-4 mb-6 max-h-64 overflow-y-auto custom-scrollbar pr-2">
+                      <div className="mt-6 pt-6 border-t border-[#F2F3D9]/10">
+                          <div className="space-y-4 mb-6">
                               {activeComments[post._id]?.length === 0 ? (
-                                  <p className="text-[10px] text-gray-600 font-bold uppercase text-center italic">Bu ilana henüz yankı gelmedi. İlkini sen yap!</p>
+                                  <p className="text-xs text-[#F2F3D9]/40 text-center">Bu ilana henüz yankı gelmedi.</p>
                               ) : (
                                   activeComments[post._id]?.map(comm => (
-                                      <div key={comm._id} className="bg-gray-900/40 border border-gray-800 p-4 rounded-2xl">
+                                      <div key={comm._id} className="bg-[#030027] border border-[#F2F3D9]/5 p-4 rounded-xl">
                                           <div className="flex justify-between mb-2">
-                                              <span className="text-[10px] font-black text-indigo-400 uppercase">@{comm.username}</span>
-                                              <span className="text-[9px] text-gray-600 font-bold">{formatDate(comm.createdAt)}</span>
+                                              <span className="text-xs font-bold text-[#DE7A00]">{comm.username}</span>
+                                              <span className="text-[10px] text-[#F2F3D9]/40">{formatDate(comm.createdAt)}</span>
                                           </div>
-                                          <p className="text-xs text-gray-300 font-medium leading-relaxed">{comm.content}</p>
+                                          <div className="text-xs text-[#F2F3D9]/80 leading-relaxed">
+                                            <ReactMarkdown
+                                               components={{
+                                                 code({node, inline, className, children, ...props}) {
+                                                   return !inline ? (
+                                                     <pre className="bg-[#02001a] p-3 rounded-lg border border-[#F2F3D9]/10 my-2 text-xs text-[#F2F3D9] font-mono overflow-x-auto"><code {...props}>{children}</code></pre>
+                                                   ) : (
+                                                     <code className="bg-[#02001a] px-1 py-0.5 rounded text-[#DE7A00] font-mono text-[10px]" {...props}>{children}</code>
+                                                   )
+                                                 }
+                                               }}
+                                            >
+                                              {comm.content}
+                                            </ReactMarkdown>
+                                          </div>
                                       </div>
                                   ))
                               )}
                           </div>
-                          {/* YORUM GİRİŞ ALANI */}
                           <div className="flex gap-2">
-                              <input type="text" value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Yankını fırlat..." className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-indigo-500/50 transition-all" />
-                              <button onClick={() => handleSendComment(post._id)} disabled={isCommenting || !commentInput.trim()} className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 rounded-xl text-[10px] font-black uppercase transition-all disabled:opacity-50">
-                                  {isCommenting ? "..." : "YANKILA"}
+                              <input type="text" value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Yankı ekle..." className="flex-1 bg-[#030027] border border-[#F2F3D9]/10 rounded-xl px-4 py-2.5 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" />
+                              <button onClick={() => handleSendComment(post._id)} disabled={isCommenting || !commentInput.trim()} className="bg-[#DE7A00] text-[#030027] hover:bg-[#c26a00] px-5 rounded-xl text-xs font-bold transition-colors disabled:opacity-50">
+                                  GÖNDER
                               </button>
                           </div>
                       </div>
@@ -696,89 +585,65 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* SAĞ KOLON: TRENDLER, RADAR VE KABİLELER */}
-          <div className="space-y-8">
+          {/* SAĞ KOLON: TRENDLER VE ETKİNLİKLER */}
+          <div className="space-y-6">
             
-            {/* TREND GÜNDEM PANELİ */}
-            <div className="bg-gray-800/30 border border-gray-700/50 p-6 rounded-[2rem] relative overflow-hidden">
-              <h3 className="text-sm font-black tracking-widest uppercase mb-5 text-blue-400 italic flex items-center gap-2">
-                <span>🔥</span> Trend Gündem
-              </h3>
+            <div className="bg-[#02001a] border border-[#F2F3D9]/10 p-6 rounded-2xl">
+              <h3 className="text-sm font-bold mb-4 text-[#F2F3D9]">Popüler Konular</h3>
               <div className="flex flex-wrap gap-2">
                 {trendingTags.length === 0 ? (
-                  <p className="text-[10px] text-gray-600 font-bold uppercase">Henüz trend yok.</p>
+                  <p className="text-xs text-[#F2F3D9]/50">Henüz trend yok.</p>
                 ) : (
                   trendingTags.map((item, idx) => (
                     <button 
                       key={idx} 
                       onClick={() => setSelectedTag(item.tag)}
-                      className="bg-gray-900 border border-gray-700 hover:border-blue-500/50 hover:bg-gray-800 text-gray-300 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 shadow-sm"
+                      className="bg-[#F2F3D9]/5 border border-[#F2F3D9]/10 hover:border-[#DE7A00] text-[#F2F3D9]/80 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-2"
                     >
-                      #{item.tag} <span className="bg-blue-600/20 text-blue-400 px-1.5 py-0.5 rounded text-[8px]">{item.count}</span>
+                      {item.tag} <span className="text-[#DE7A00] text-[10px]">{item.count}</span>
                     </button>
                   ))
                 )}
               </div>
             </div>
 
-             {/* SİNERJİ RADARI */}
-             <div className="bg-gradient-to-br from-indigo-900/30 to-purple-900/10 border border-indigo-500/30 p-6 rounded-[2rem] relative overflow-hidden">
-                <div className="absolute -right-4 -top-4 text-6xl opacity-20">📡</div>
-                <h3 className="text-sm font-black tracking-widest uppercase mb-4 text-indigo-400 italic">Sinerji Radarı</h3>
+            <div className="bg-[#02001a] border border-[#F2F3D9]/10 p-6 rounded-2xl">
+                <h3 className="text-sm font-bold mb-4 text-[#F2F3D9]">Yaklaşan Etkinlikler</h3>
                 <div className="space-y-3">
-                    {recommendations.length === 0 ? <p className="text-[10px] text-gray-600 font-bold uppercase">Şu an eşleşme yok.</p> : recommendations.map(rec => (
-                        <div key={rec._id} className="flex items-center justify-between bg-gray-900/50 p-3 rounded-2xl border border-gray-700/50 hover:border-indigo-500/50 transition-all">
-                           <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-xs font-bold overflow-hidden">
-                                    {rec.profilePicture ? <img src={rec.profilePicture} className="w-full h-full object-cover"/> : rec.username[0].toUpperCase()}
-                                </div>
-                                <div>
-                                    <p className="text-xs font-bold text-gray-200">{rec.username}</p>
-                                    <p className="text-[9px] text-indigo-400 font-black">{rec.karmaPoints} KARMA</p>
-                                </div>
-                           </div>
-                           <button onClick={() => handleSendFriendRequest(rec._id)} className="text-[9px] bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600 hover:text-white px-3 py-2 rounded-xl font-black transition-all">BAĞ KUR</button>
+                    {events.map(ev => (
+                        <div key={ev.id} className="bg-[#030027] p-4 rounded-xl border border-[#F2F3D9]/5 flex flex-col gap-2 hover:border-[#DE7A00]/50 transition-colors cursor-pointer">
+                            <h4 className="text-sm font-bold text-[#F2F3D9]">{ev.title}</h4>
+                            <div className="flex justify-between items-center text-xs text-[#F2F3D9]/50">
+                                <span>{ev.time}</span>
+                                <span className="bg-[#F2F3D9]/5 px-2 py-1 rounded text-[10px]">{ev.attendees} Kişi</span>
+                            </div>
                         </div>
                     ))}
+                    <button className="w-full mt-2 bg-[#F2F3D9]/5 text-[#F2F3D9] hover:bg-[#F2F3D9]/10 py-2.5 rounded-xl text-xs font-bold transition-colors">
+                        Tümünü Gör
+                    </button>
                 </div>
             </div>
 
-            {/* KABİLELER */}
-            <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-black tracking-tight italic text-white flex items-center gap-3">
-                   KABİLE KEŞFİ
-                </h3>
-                {/* KABİLE KURMA BUTONU */}
-                <button onClick={() => setIsHubModalOpen(true)} className="bg-indigo-600 hover:bg-indigo-500 text-[9px] font-black uppercase tracking-widest text-white px-4 py-2 rounded-xl transition-all shadow-lg shadow-indigo-500/20">
-                    + KABİLE KUR
-                </button>
+            <div className="bg-[#030027] border border-[#DE7A00]/30 p-6 rounded-2xl text-center">
+               <h3 className="text-base font-bold text-[#F2F3D9] mb-2">Sinerji Ağı Genişliyor</h3>
+               <p className="text-xs text-[#F2F3D9]/60 mb-5">Yeni kabileler ve gezginlerle eşleşmek için Keşfet'e göz at.</p>
+               <Link href="/explore" className="inline-block w-full bg-[#DE7A00] hover:bg-[#c26a00] text-[#030027] font-bold text-xs px-5 py-3 rounded-xl transition-colors">
+                  Keşfet'e Git
+               </Link>
             </div>
-            
-            <div className="space-y-4">
-                {filteredHubs.map(hub => (
-                    <div key={hub._id} className="bg-gray-800/30 border border-gray-700 p-5 rounded-[2rem] hover:border-gray-500 transition-all group">
-                        <div className="flex justify-between mb-4">
-                            <span className="text-4xl group-hover:scale-110 transition-transform">{hub.icon}</span>
-                            <span className="text-[9px] font-black bg-gray-700/50 px-3 py-1.5 rounded-full text-gray-400 uppercase tracking-widest">{hub.category}</span>
-                        </div>
-                        <h4 className="font-bold text-sm mb-1 text-white flex items-center gap-2">
-                            {hub.name} {hub.isPrivate && "🔒"}
-                        </h4>
-                        <p className="text-[10px] text-gray-500 leading-relaxed mb-4 line-clamp-2">{hub.description}</p>
-                        <div className="flex justify-between items-center">
-                            <span className="text-[9px] text-gray-600 font-black uppercase">{hub.members?.length} Üye</span>
-                            {user?.hubs?.includes(hub._id) ? (
-                                <Link href={`/hubs/${hub._id}`} className="bg-green-500/10 text-green-400 px-4 py-2 rounded-xl text-[9px] font-black border border-green-500/20">ODAYA GİR</Link>
-                            ) : (
-                                <button onClick={() => handleJoinHub(hub._id)} className="bg-blue-600 px-4 py-2 rounded-xl text-[9px] font-black text-white hover:bg-blue-500">KATIL</button>
-                            )}
-                        </div>
-                    </div>
-                ))}
-            </div>
+
           </div>
         </div>
       </main>
+      
+      {/* SADE VE İNCE KAYDIRMA ÇUBUĞU */}
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #F2F3D930; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #DE7A00; }
+      `}</style>
     </div>
   );
 }

@@ -35,6 +35,9 @@ export default function HubRoomPage() {
   const callsRef = useRef({});
   const localVideoRef = useRef(null);
   const messagesEndRef = useRef(null);
+  
+  // Kamerayı kopmalara karşı Ref içinde tutuyoruz
+  const localStreamRef = useRef(null);
 
   // --- TEMEL DURUMLAR (STATES) ---
   const [user, setUser] = useState(null);
@@ -51,7 +54,7 @@ export default function HubRoomPage() {
 
   // --- MEDYA VE GERÇEK ZAMANLI İLETİŞİM DURUMLARI ---
   const [localStream, setLocalStream] = useState(null);
-  const [remoteStreams, setRemoteStreams] = useState([]); // Diğer kameraları tutacağımız dizi
+  const [remoteStreams, setRemoteStreams] = useState([]); 
   const [isMuted, setIsMuted] = useState(false);
   const [isCamOff, setIsCamOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
@@ -65,14 +68,13 @@ export default function HubRoomPage() {
       setTimeout(() => scrollToBottom(), 100);
     });
 
-    // Biri kamerayı açtığında sinyal gelir, PeerJS ile onu ararız (Call)
     socket.current.on("user-connected-voice", (peerId) => {
       toast.success("🎙️ Canlı ağa yeni bir gezgin katıldı!", {
         style: { borderRadius: '1rem', background: '#1e1b4b', color: '#fff', fontSize: '12px', fontWeight: 'bold' }
       });
       
-      if (localStream && peerInstance.current) {
-        connectToNewUser(peerId, localStream);
+      if (localStreamRef.current && peerInstance.current) {
+        connectToNewUser(peerId, localStreamRef.current);
       }
     });
 
@@ -80,7 +82,7 @@ export default function HubRoomPage() {
       if (socket.current) socket.current.disconnect();
       if (peerInstance.current) peerInstance.current.destroy();
     };
-  }, [localStream]);
+  }, []); 
 
   // --- 2. VERİ ÇEKME VE ODAYA GİRİŞ ETKİSİ ---
   useEffect(() => {
@@ -160,36 +162,31 @@ export default function HubRoomPage() {
   // --- 4. PEERJS VE WEBRTC CANLI MEDYA BAĞLANTI MOTORLARI ---
   const handleStartVoiceNetwork = async () => {
     try {
-      // 1. Tarayıcıdan Kamera ve Mikrofonu Çek
       const stream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
 
       setLocalStream(stream);
+      localStreamRef.current = stream; 
 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = stream;
       }
 
-      // 2. Next.js ile PeerJS'i Dinamik Olarak İçe Aktar (Hata almamak için)
       const { default: Peer } = await import("peerjs");
       
-      // 3. Yeni bir Peer objesi oluştur
       const peer = new Peer(); 
       peerInstance.current = peer;
 
-      // 4. Peer sunucusuna bağlandığında Soket üzerinden odadakilere ID'ni fırlat
       peer.on("open", (id) => {
         socket.current.emit("join-voice-room", { hubId, peerId: id });
         toast.success("⚡ Sinerji Canlı İletişim Ağı Aktif! Kamera açıldı.");
       });
 
-      // 5. Biri Seni Aradığında (Çağrı Geldiğinde) Cevap Ver
       peer.on("call", (call) => {
-        call.answer(stream); // Kendi stream'ini karşıya gönder
+        call.answer(stream); 
         call.on("stream", (userVideoStream) => {
-          // Karşı tarafın stream'ini arayüze ekle
           addRemoteStream(call.peer, userVideoStream);
         });
         
@@ -205,7 +202,6 @@ export default function HubRoomPage() {
     }
   };
 
-  // Yeni Bağlanan Kişiyi Arama (Call) Fonksiyonu
   const connectToNewUser = (peerId, stream) => {
     if (!peerInstance.current) return;
     
@@ -222,7 +218,6 @@ export default function HubRoomPage() {
     callsRef.current[peerId] = call;
   };
 
-  // State'e Güvenli Şekilde Yeni Kamera Ekleyen Yardımcı Fonksiyon
   const addRemoteStream = (peerId, stream) => {
     setRemoteStreams((prev) => {
       if (prev.some((s) => s.peerId === peerId)) return prev;
@@ -230,36 +225,69 @@ export default function HubRoomPage() {
     });
   };
 
-  // Çıkan Kişinin Kamerasını Kaldıran Yardımcı Fonksiyon
   const removeRemoteStream = (peerId) => {
     setRemoteStreams((prev) => prev.filter((s) => s.peerId !== peerId));
   };
 
-  // Ekran Paylaşımı Başlat
+  // --- YENİ EKLENEN/GÜNCELLENEN: KUSURSUZ EKRAN PAYLAŞIMI MOTORU ---
   const handleScreenShare = async () => {
     try {
       const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const videoTrack = screenStream.getVideoTracks()[0];
       
+      // 1. Ekranı yerel (kendi) penceremize yansıtıyoruz
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = screenStream;
       }
-      
       setIsScreenSharing(true);
       
-      screenStream.getVideoTracks()[0].onended = () => {
-        if (localStream && localVideoRef.current) {
-          localVideoRef.current.srcObject = localStream;
+      // 2. Ekran akışını (track) anında odadaki diğer gezginlere zorla fırlatıyoruz (Sihirli Kısım)
+      if (peerInstance.current) {
+        const connections = peerInstance.current.connections;
+        Object.keys(connections).forEach((peerId) => {
+          connections[peerId].forEach((conn) => {
+            if (conn.peerConnection) {
+              const sender = conn.peerConnection.getSenders().find((s) => s.track && s.track.kind === 'video');
+              if (sender) {
+                sender.replaceTrack(videoTrack);
+              }
+            }
+          });
+        });
+      }
+      
+      // 3. Kullanıcı "Paylaşımı Durdur" dediğinde eski kameraya geri dönme senaryosu
+      videoTrack.onended = () => {
+        if (localStreamRef.current && localVideoRef.current) {
+          // Kendi ekranımıza kamerayı geri veriyoruz
+          localVideoRef.current.srcObject = localStreamRef.current;
+          const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
+          
+          // Odaya tekrar eski kameramızı fırlatıyoruz
+          if (peerInstance.current) {
+            const conns = peerInstance.current.connections;
+            Object.keys(conns).forEach((peerId) => {
+              conns[peerId].forEach((conn) => {
+                if (conn.peerConnection) {
+                  const sender = conn.peerConnection.getSenders().find((s) => s.track && s.track.kind === 'video');
+                  if (sender) {
+                    sender.replaceTrack(oldVideoTrack);
+                  }
+                }
+              });
+            });
+          }
         }
         setIsScreenSharing(false);
       };
       
-      toast.success("🖥️ Ekran paylaşımı sinyali başladı!");
+      toast.success("🖥️ Ekran paylaşımı sinyali tüm kabileye aktarılıyor!");
     } catch (err) {
       console.error("Ekran paylaşılamadı:", err);
+      toast.error("Ekran paylaşılamadı veya iptal edildi.");
     }
   };
 
-  // Ses Durumu Kontrolü
   const toggleMute = () => {
     if (localStream) {
       localStream.getAudioTracks()[0].enabled = !localStream.getAudioTracks()[0].enabled;
@@ -267,7 +295,6 @@ export default function HubRoomPage() {
     }
   };
 
-  // Kamera Durumu Kontrolü
   const toggleCamera = () => {
     if (localStream) {
       localStream.getVideoTracks()[0].enabled = !localStream.getVideoTracks()[0].enabled;
