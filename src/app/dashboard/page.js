@@ -39,10 +39,7 @@ export default function DashboardPage() {
   // --- HİKAYE (SİNYAL) SİSTEMİ DURUMLARI ---
   const [showStoryModal, setShowStoryModal] = useState(false);
   const [newStory, setNewStory] = useState("");
-  const [stories, setStories] = useState([
-    { id: 1, username: 'sinerji_bot', avatar: '🤖', content: 'Sistem yepyeni, premium kurumsal tasarıma geçirildi! 🚀', time: '1s önce' },
-    { id: 2, username: 'kurucu_deniz', avatar: '👑', content: 'Prussian Blue ve Amber uyumu harika oldu.', time: '2s önce' }
-  ]);
+  const [stories, setStories] = useState([]); // YENİ: Artık boş başlıyor, API'den dolacak!
 
   // --- ETKİNLİK SİSTEMİ VERİSİ ---
   const events = [
@@ -72,7 +69,7 @@ export default function DashboardPage() {
     };
   }, [openCommentsId]);
 
-  // --- 2. VERİ ÇEKME MOTORU ---
+  // --- 2. VERİ ÇEKME MOTORU (BACKEND BAĞLANTILARI) ---
   useEffect(() => {
     const fetchData = async () => {
       const userId = localStorage.getItem("userId");
@@ -94,6 +91,12 @@ export default function DashboardPage() {
         const friendRes = await fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`);
         setFriendRequests(await friendRes.json());
 
+        // YENİ: SİNYALLERİ (HİKAYELERİ) VERİTABANINDAN ÇEKİYORUZ
+        const storiesRes = await fetch("https://sinerjihub-1.onrender.com/api/stories/active");
+        if (storiesRes.ok) {
+           setStories(await storiesRes.json());
+        }
+
       } catch (error) { 
         console.error("Veri yüklenirken hata oluştu:", error); 
       } finally { 
@@ -104,20 +107,28 @@ export default function DashboardPage() {
   }, [router]);
 
   // --- HİKAYE (SİNYAL) EKLEME MOTORU ---
-  const handleAddStory = (e) => {
+  const handleAddStory = async (e) => {
     e.preventDefault();
     if(!newStory.trim()) return;
-    const newStoryObj = {
-       id: Date.now(),
-       username: user?.username,
-       avatar: user?.profilePicture ? user.profilePicture : user?.username?.[0].toUpperCase(),
-       content: newStory,
-       time: 'Şimdi'
-    };
-    setStories([newStoryObj, ...stories]);
-    setNewStory("");
-    setShowStoryModal(false);
-    toast.success("Anlık Sinyal fırlatıldı! (24 Saat Aktif)", { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #005700' } });
+    const userId = localStorage.getItem("userId");
+
+    try {
+      const res = await fetch("https://sinerjihub-1.onrender.com/api/stories/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, content: newStory }),
+      });
+
+      if (res.ok) {
+        const savedStory = await res.json();
+        setStories([savedStory, ...stories]);
+        setNewStory("");
+        setShowStoryModal(false);
+        toast.success("Anlık Sinyal fırlatıldı! (24 Saat Aktif)", { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #005700' } });
+      }
+    } catch (err) {
+      toast.error("Bağlantı hatası, sinyal gitmedi!", { style: { background: '#520000', color: '#F2F3D9' } });
+    }
   };
 
   const renderBadges = (roles) => {
@@ -437,11 +448,11 @@ export default function DashboardPage() {
             </button>
 
             {stories.map(story => (
-               <div key={story.id} className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer" onClick={() => toast(story.content, { icon: '💬', style: {background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00'} })}>
+               <div key={story._id} className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer" onClick={() => toast(story.content, { icon: '💬', style: {background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00'} })}>
                   <div className="w-16 h-16 rounded-2xl bg-[#030027] border-2 border-[#DE7A00] flex items-center justify-center overflow-hidden font-bold text-xl text-[#F2F3D9]">
-                     {story.avatar.length > 5 ? <img src={story.avatar} className="w-full h-full object-cover"/> : story.avatar}
+                     {story.user?.profilePicture ? <img src={story.user.profilePicture} className="w-full h-full object-cover"/> : story.user?.username?.[0].toUpperCase()}
                   </div>
-                  <span className="text-[10px] font-semibold text-[#F2F3D9]/80">{story.username}</span>
+                  <span className="text-[10px] font-semibold text-[#F2F3D9]/80">{story.user?.username}</span>
                </div>
             ))}
         </div>
@@ -637,7 +648,6 @@ export default function DashboardPage() {
         </div>
       </main>
       
-      {/* SADE VE İNCE KAYDIRMA ÇUBUĞU */}
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }

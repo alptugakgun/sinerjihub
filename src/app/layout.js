@@ -11,12 +11,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// --- YENİ: SİNERJİHUB PWA VE SEO METADATA KİMLİĞİ ---
+// --- SİNERJİHUB PWA VE SEO METADATA KİMLİĞİ ---
 export const metadata = {
   title: "SinerjiHub | Dijital Kabile Ekosistemi",
   description: "Gezginler, öğrenciler ve geliştiriciler için uçtan uca etkileşimli sinerji ağı ve kabile platformu.",
   generator: "Next.js",
-  manifest: "/manifest.json", // PWA (Mobil Uygulama) Kurulum Tetikleyicisi
+  manifest: "/manifest.json", 
   keywords: ["sinerjihub", "eğitim", "yazılım", "kabile", "webrtc", "pwa", "sosyal ağ"],
   authors: [{ name: "Mehmet Alptuğ Akgün" }],
   icons: [
@@ -25,23 +25,22 @@ export const metadata = {
   ],
 };
 
-// --- YENİ: MOBİL CİHAZ VİTRİN AYARLARI ---
+// --- MOBİL CİHAZ VİTRİN AYARLARI ---
 export const viewport = {
-  themeColor: "#050505", // Tarayıcı üst çubuğunu Sinerji karanlığına bürüyoruz
+  themeColor: "#030027", // Tarayıcı üst çubuğu Prussian Blue oldu
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1, // Uygulama hissiyatı için ekrana zoom yapılmasını engeller
+  maximumScale: 1, 
   userScalable: false, 
 };
 
 export default function RootLayout({ children }) {
   return (
     <html
-      lang="tr" // Sistem dili Türkçe olarak güncellendi
+      lang="tr"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      {/* Global arkaplan, metin rengi ve fare ile metin seçme (highlight) stili eklendi */}
-      <body className="min-h-full flex flex-col bg-[#050505] text-white selection:bg-blue-500/30">
+      <body className="min-h-full flex flex-col bg-prussian text-beige">
         {children}
       </body>
     </html>

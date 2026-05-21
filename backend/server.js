@@ -15,6 +15,8 @@ const messageRoute = require('./routes/messages');
 const socialRoute = require('./routes/social');
 const adminRoute = require('./routes/admin'); // Admin Paneli Rotası
 const feedbackRoute = require('./routes/feedback'); // Geri Bildirim Rotası
+const storyRoute = require('./routes/stories');
+app.use('/api/stories', storyRoute);
 
 // YENİ EKLENEN: Kabile veritabanı modelini sunucuya çağırıyoruz
 const Hub = require('./models/Hub'); 
@@ -101,7 +103,14 @@ io.on("connection", (socket) => {
       });
     }
   });
+  
+  // --- SİNERJİ CANLI KOD LABORATUVARI SOKETİ ---
+  socket.on("sendCodeUpdate", ({ hubId, code }) => {
+  // Kodu yazan hariç, odadaki herkese yeni kodu anında fırlatır
+  socket.to(hubId).emit("receiveCodeUpdate", code); 
+  });
 
+  
   // 3. Kabile (Hub) Odasına Mesaj Gönderildiğinde
   // DİKKAT: Artık bu işlem veritabanı (async) kaydı barındırıyor!
   socket.on("sendHubMessage", async (data) => {
