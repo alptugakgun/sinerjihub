@@ -13,15 +13,14 @@ const hubRoute = require('./routes/hubs');
 const notificationRoute = require('./routes/notifications');
 const messageRoute = require('./routes/messages');
 const socialRoute = require('./routes/social');
-const adminRoute = require('./routes/admin'); // Admin Paneli Rotası
-const feedbackRoute = require('./routes/feedback'); // Geri Bildirim Rotası
-const storyRoute = require('./routes/stories');
-app.use('/api/stories', storyRoute);
+const adminRoute = require('./routes/admin'); 
+const feedbackRoute = require('./routes/feedback'); 
+const storyRoute = require('./routes/stories'); // Route tanımlaması burada kalsın
 
 // YENİ EKLENEN: Kabile veritabanı modelini sunucuya çağırıyoruz
 const Hub = require('./models/Hub'); 
 
-const app = express();
+const app = express(); // <--- İŞTE APP BURADA DOĞDU!
 
 // YENİ: Express'i bir HTTP sunucusuna sarıyoruz
 const server = http.createServer(app); 
@@ -29,7 +28,7 @@ const server = http.createServer(app);
 // YENİ: Socket.io motorunu sunucuya entegre ediyoruz
 const io = new Server(server, {
   cors: {
-    origin: "*", // Şimdilik tüm kaynaklara açık. İleride sadece frontend linkini koyabiliriz.
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
@@ -47,14 +46,16 @@ mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB Başarıyla Bağlandı!'))
   .catch((err) => console.log('❌ MongoDB Bağlantı Hatası:', err));
 
+// APP DOĞDUKTAN SONRA KULLANILACAK OLAN ROTALAR:
 app.use('/api/auth', authRoute);
 app.use('/api/posts', postRoute);
 app.use('/api/hubs', hubRoute);
 app.use('/api/notifications', notificationRoute);
 app.use('/api/messages', messageRoute);
 app.use('/api/social', socialRoute);
-app.use('/api/admin', adminRoute); // Admin Rotası Kullanıma Alındı
-app.use('/api/feedback', feedbackRoute); // Geri Bildirim Rotası Kullanıma Alındı
+app.use('/api/admin', adminRoute); 
+app.use('/api/feedback', feedbackRoute); 
+app.use('/api/stories', storyRoute); // <--- HATA VEREN SATIRI DOĞRU YERE ALDIK!
 
 // --- YENİ: SOCKET.IO GERÇEK ZAMANLI OLAY YÖNETİCİSİ ---
 
