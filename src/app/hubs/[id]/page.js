@@ -57,9 +57,13 @@ export default function HubRoomPage() {
   const [isCamOff, setIsCamOff] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
-  // --- YENİ: GERÇEK ZAMANLI KOD LABORATUVARI (LIVE IDE) DURUMLARI ---
+  // --- GERÇEK ZAMANLI KOD LABORATUVARI (LIVE IDE) DURUMLARI ---
   const [isIdeOpen, setIsIdeOpen] = useState(false);
   const [liveCode, setLiveCode] = useState("// SinerjiHub Ortak Kod Laboratuvarı Başlatıldı...\n// Ekibinizle aynı anda mimariyi burada tasarlayabilirsiniz.\n\n");
+  const [isSavingCode, setIsSavingCode] = useState(false);
+  const [snippetTitle, setSnippetTitle] = useState("");
+  const [showSnippetModal, setShowSnippetModal] = useState(false);
+  const [showArchive, setShowArchive] = useState(false); // Arşiv paneli durumu
 
   // --- 1. ARKA PLAN MOTORU VE SOCKET LISTENERS ---
   useEffect(() => {
@@ -70,7 +74,6 @@ export default function HubRoomPage() {
       setTimeout(() => scrollToBottom(), 100);
     });
 
-    // YENİ EKLENEN: Başkası kod yazdığında senin ekranında anında güncellenir
     socket.current.on("receiveCodeUpdate", (newCode) => {
       setLiveCode(newCode);
     });
@@ -128,12 +131,43 @@ export default function HubRoomPage() {
 
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
 
-  // --- CANLI KOD SENKRONİZASYONU ---
+  // --- CANLI KOD SENKRONİZASYONU VE KAYIT MANTIĞI ---
   const handleCodeChange = (e) => {
     const updatedCode = e.target.value;
     setLiveCode(updatedCode);
-    // Kodu backend aracılığıyla odadaki diğer kişilere fırlatıyoruz
     socket.current.emit("sendCodeUpdate", { hubId, code: updatedCode });
+  };
+
+  const handleSaveSnippet = async (e) => {
+    e.preventDefault();
+    if (!liveCode.trim()) return;
+    setIsSavingCode(true);
+
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}/code/save`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user._id,
+          code: liveCode,
+          title: snippetTitle || "İsimsiz Kod Bloğu"
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        toast.success("Kod başarıyla arşive kaydedildi!", { style: { background: '#005700', color: '#F2F3D9' } });
+        setHub(prev => ({ ...prev, codeSnippets: [...(prev.codeSnippets || []), data.snippet] }));
+        setShowSnippetModal(false);
+        setSnippetTitle("");
+      } else {
+        toast.error("Kod kaydedilemedi.");
+      }
+    } catch (error) {
+      toast.error("Bağlantı hatası!");
+    } finally {
+      setIsSavingCode(false);
+    }
   };
 
   // --- DOSYA SEÇME ---
@@ -283,6 +317,8 @@ export default function HubRoomPage() {
     setIsSending(false);
   };
 
+  const formatDate = (dateString) => new Date(dateString).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
   if (isLoading) return (
     <div className="min-h-screen bg-[#030027] flex items-center justify-center text-[#F2F3D9] flex-col">
       <div className="w-12 h-12 border-4 border-[#DE7A00] border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -294,11 +330,25 @@ export default function HubRoomPage() {
     <div className="min-h-screen bg-[#030027] text-[#F2F3D9] font-sans flex flex-col md:flex-row relative overflow-hidden selection:bg-[#DE7A00]/30">
       <Toaster position="top-center" />
 
-      {/* --- SOL PANEL: KABİLE DETAYLARI VE ÜYE HİYERARŞİSİ --- */}
+      {/* SNIPPET KAYDETME MODALI */}
+      {showSnippetModal && (
+        <div className="fixed inset-0 bg-[#030027]/90 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
+          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="text-xl font-bold mb-2">Kodu Arşive Kaydet</h3>
+            <p className="text-[11px] text-[#F2F3D9]/60 mb-6">Bu kod bloğu kabilenin hafızasına eklenecek.</p>
+            <form onSubmit={handleSaveSnippet} className="space-y-4">
+              <input type="text" value={snippetTitle} onChange={(e) => setSnippetTitle(e.target.value)} className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl p-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" placeholder="Kodun Başlığı (örn: Auth Middleware)" required />
+              <button disabled={isSavingCode} className="w-full bg-[#DE7A00] py-3.5 rounded-xl font-bold text-sm text-[#030027] hover:bg-[#c26a00] transition-colors disabled:opacity-50">{isSavingCode ? "KAYDEDİLİYOR..." : "ARŞİVE EKLE"}</button>
+              <button type="button" onClick={() => setShowSnippetModal(false)} className="w-full text-[#F2F3D9]/50 text-xs font-bold mt-2 hover:text-[#F2F3D9]">İptal</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SOL PANEL: KABİLE DETAYLARI VE ÜYE HİYERARŞİSİ */}
       <aside className="w-full md:w-72 bg-[#02001a] border-r border-[#F2F3D9]/10 p-6 flex flex-col z-10 select-none shadow-2xl shrink-0">
         <Link href="/dashboard" className="text-[#F2F3D9]/50 hover:text-[#DE7A00] text-[10px] font-bold uppercase tracking-widest flex items-center gap-3 mb-10 transition-colors">
-          <span className="w-6 h-6 bg-[#F2F3D9]/5 rounded-lg flex items-center justify-center">←</span> 
-          Ana Üsse Dön
+          <span className="w-6 h-6 bg-[#F2F3D9]/5 rounded-lg flex items-center justify-center">←</span> Ana Üsse Dön
         </Link>
 
         {/* KABİLE KİMLİK KARTI */}
@@ -308,7 +358,6 @@ export default function HubRoomPage() {
           <span className="inline-block bg-[#F2F3D9]/5 text-[#F2F3D9]/70 border border-[#F2F3D9]/10 px-3 py-1 rounded-md text-[9px] font-bold uppercase tracking-wider">
             {hub?.category}
           </span>
-          <p className="text-xs text-[#F2F3D9]/50 mt-4 font-medium leading-relaxed">{hub?.description}</p>
         </div>
 
         {/* KABİLE ÜYELERİ LİSTESİ */}
@@ -333,61 +382,39 @@ export default function HubRoomPage() {
 
         {/* CANLI BAĞLANTI TETİKLEYİCİSİ */}
         <div className="mt-auto pt-4">
-          <button 
-            onClick={handleStartVoiceNetwork} 
-            disabled={localStream !== null}
-            className="w-full bg-[#DE7A00] hover:bg-[#c26a00] disabled:bg-[#005700] disabled:text-[#F2F3D9] text-[#030027] font-bold py-3.5 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2"
-          >
+          <button onClick={handleStartVoiceNetwork} disabled={localStream !== null} className="w-full bg-[#DE7A00] hover:bg-[#c26a00] disabled:bg-[#005700] disabled:text-[#F2F3D9] text-[#030027] font-bold py-3.5 rounded-xl text-xs uppercase tracking-widest transition-colors flex items-center justify-center gap-2">
             <span className="text-base">🎙️</span> {localStream ? "AĞA BAĞLISIN" : "CANLI AĞI BAŞLAT"}
           </button>
         </div>
       </aside>
 
-      {/* --- SAĞ PANEL: İLETİŞİM, VİDEO VE CANLI IDE --- */}
+      {/* SAĞ PANEL: İLETİŞİM, VİDEO VE CANLI IDE */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative z-10 bg-grid-slate-900/[0.05]">
         
         {/* ÜST BAR VE MEDYA KONTROLLERİ */}
         <div className="px-6 py-4 border-b border-[#F2F3D9]/10 bg-[#02001a]/80 backdrop-blur-md flex justify-between items-center z-20">
           <div className="flex items-center gap-3">
             <div className="w-2.5 h-2.5 bg-[#005700] rounded-full animate-pulse"></div>
-            <h3 className="font-bold text-xs uppercase tracking-widest text-[#F2F3D9]">
-              Sinerji İletişim Ağı
-            </h3>
+            <h3 className="font-bold text-xs uppercase tracking-widest text-[#F2F3D9]">Sinerji İletişim Ağı</h3>
           </div>
 
           <div className="flex items-center gap-4">
-            
-            {/* YENİ: IDE AÇ/KAPA BUTONU */}
-            <button 
-               onClick={() => setIsIdeOpen(!isIdeOpen)} 
-               className={`hidden md:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors border ${isIdeOpen ? 'bg-[#030027] text-[#DE7A00] border-[#DE7A00]' : 'bg-[#F2F3D9]/5 text-[#F2F3D9] border-[#F2F3D9]/10 hover:border-[#DE7A00]/50'}`}
-            >
+            <button onClick={() => setIsIdeOpen(!isIdeOpen)} className={`hidden md:flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors border ${isIdeOpen ? 'bg-[#030027] text-[#DE7A00] border-[#DE7A00]' : 'bg-[#F2F3D9]/5 text-[#F2F3D9] border-[#F2F3D9]/10 hover:border-[#DE7A00]/50'}`}>
                💻 KOD LABORATUVARI {isIdeOpen ? "(AÇIK)" : "(KAPALI)"}
             </button>
 
             {localStream && (
               <div className="flex gap-2 border-l border-[#F2F3D9]/10 pl-4 ml-2">
-                <button onClick={toggleMute} className={`p-2 rounded-lg border text-xs font-bold transition-colors ${isMuted ? "bg-[#520000] border-[#520000] text-[#F2F3D9]" : "bg-[#F2F3D9]/5 border-[#F2F3D9]/10 text-[#F2F3D9]/70 hover:text-[#F2F3D9]"}`} title="Mikrofon">
-                  {isMuted ? "🔇" : "🎙️"}
-                </button>
-                <button onClick={toggleCamera} className={`p-2 rounded-lg border text-xs font-bold transition-colors ${isCamOff ? "bg-[#520000] border-[#520000] text-[#F2F3D9]" : "bg-[#F2F3D9]/5 border-[#F2F3D9]/10 text-[#F2F3D9]/70 hover:text-[#F2F3D9]"}`} title="Kamera">
-                  {isCamOff ? "📹" : "📹"}
-                </button>
-                <button onClick={handleScreenShare} className={`p-2 px-3 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors ${isScreenSharing ? "bg-[#DE7A00] text-[#030027] border-[#DE7A00]" : "bg-[#F2F3D9]/5 border-[#F2F3D9]/10 text-[#F2F3D9]/70 hover:text-[#F2F3D9]"}`} title="Ekran Paylaş">
-                   🖥️ Ekran
-                </button>
+                <button onClick={toggleMute} className={`p-2 rounded-lg border text-xs font-bold transition-colors ${isMuted ? "bg-[#520000] border-[#520000] text-[#F2F3D9]" : "bg-[#F2F3D9]/5 border-[#F2F3D9]/10 text-[#F2F3D9]/70 hover:text-[#F2F3D9]"}`} title="Mikrofon">{isMuted ? "🔇" : "🎙️"}</button>
+                <button onClick={toggleCamera} className={`p-2 rounded-lg border text-xs font-bold transition-colors ${isCamOff ? "bg-[#520000] border-[#520000] text-[#F2F3D9]" : "bg-[#F2F3D9]/5 border-[#F2F3D9]/10 text-[#F2F3D9]/70 hover:text-[#F2F3D9]"}`} title="Kamera">{isCamOff ? "📹" : "📹"}</button>
+                <button onClick={handleScreenShare} className={`p-2 px-3 rounded-lg border text-xs font-bold uppercase tracking-wider transition-colors ${isScreenSharing ? "bg-[#DE7A00] text-[#030027] border-[#DE7A00]" : "bg-[#F2F3D9]/5 border-[#F2F3D9]/10 text-[#F2F3D9]/70 hover:text-[#F2F3D9]"}`} title="Ekran Paylaş">🖥️ Ekran</button>
               </div>
             )}
-            <button 
-              onClick={() => router.push('/dashboard')} 
-              className="bg-[#520000] hover:bg-[#7a0000] text-[#F2F3D9] px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors ml-2"
-            >
-              AYRIL
-            </button>
+            <button onClick={() => router.push('/dashboard')} className="bg-[#520000] hover:bg-[#7a0000] text-[#F2F3D9] px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest transition-colors ml-2">AYRIL</button>
           </div>
         </div>
 
-        {/* ANA GÖVDE: EKRAN BÖLÜNME (SPLIT-SCREEN) MANTIĞI */}
+        {/* ANA GÖVDE: EKRAN BÖLÜNME MANTIĞI */}
         <div className="flex-1 flex overflow-hidden">
           
           {/* SOL KISIM: VİDEO & SOHBET */}
@@ -403,10 +430,7 @@ export default function HubRoomPage() {
                     {isScreenSharing && <div className="absolute top-3 right-3 bg-[#DE7A00] text-[#030027] px-2 py-1 rounded text-[8px] font-bold uppercase">YAYINDA</div>}
                   </div>
                 )}
-
-                {remoteStreams.map((remote) => (
-                  <RemoteVideo key={remote.peerId} peerId={remote.peerId} stream={remote.stream} />
-                ))}
+                {remoteStreams.map((remote) => <RemoteVideo key={remote.peerId} peerId={remote.peerId} stream={remote.stream} />)}
               </div>
 
               {/* MESAJLAŞMA AKIŞI */}
@@ -428,9 +452,7 @@ export default function HubRoomPage() {
                               {msg.attachmentType?.startsWith("image/") ? (
                                 <img src={msg.attachment} className="max-w-full rounded-lg" alt="Ek" />
                               ) : (
-                                <a href={msg.attachment} download={msg.attachmentName} className="text-[10px] font-bold uppercase bg-[#F2F3D9]/10 px-3 py-2 rounded-lg block text-center hover:bg-[#F2F3D9]/20 transition-colors">
-                                  📁 {msg.attachmentName}
-                                </a>
+                                <a href={msg.attachment} download={msg.attachmentName} className="text-[10px] font-bold uppercase bg-[#F2F3D9]/10 px-3 py-2 rounded-lg block text-center hover:bg-[#F2F3D9]/20 transition-colors">📁 {msg.attachmentName}</a>
                               )}
                             </div>
                           )}
@@ -457,41 +479,65 @@ export default function HubRoomPage() {
                     <span className="text-lg">📎</span>
                     <input type="file" onChange={handleFileChange} className="hidden" />
                   </label>
-                  <input 
-                    type="text" value={textInput} onChange={(e) => setTextInput(e.target.value)} 
-                    placeholder="Mesaj gönder..." 
-                    className="flex-1 bg-[#F2F3D9]/5 border border-[#F2F3D9]/10 rounded-xl pl-4 pr-16 py-3 text-xs text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" autoComplete="off"
-                  />
-                  <button type="submit" disabled={isSending || (!textInput.trim() && !attachment)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#DE7A00] hover:bg-[#c26a00] disabled:bg-[#F2F3D9]/10 disabled:text-[#F2F3D9]/30 text-[#030027] font-bold w-10 h-8 rounded-lg text-xs transition-colors flex items-center justify-center">
-                    {isSending ? "..." : "➤"}
-                  </button>
+                  <input type="text" value={textInput} onChange={(e) => setTextInput(e.target.value)} placeholder="Mesaj gönder..." className="flex-1 bg-[#F2F3D9]/5 border border-[#F2F3D9]/10 rounded-xl pl-4 pr-16 py-3 text-xs text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" autoComplete="off" />
+                  <button type="submit" disabled={isSending || (!textInput.trim() && !attachment)} className="absolute right-2 top-1/2 -translate-y-1/2 bg-[#DE7A00] hover:bg-[#c26a00] disabled:bg-[#F2F3D9]/10 disabled:text-[#F2F3D9]/30 text-[#030027] font-bold w-10 h-8 rounded-lg text-xs transition-colors flex items-center justify-center">➤</button>
                 </div>
               </div>
             </form>
           </div>
 
-          {/* SAĞ KISIM: CANLI IDE (Sadece isIdeOpen true ise görünür) */}
+          {/* SAĞ KISIM: CANLI IDE VE ARŞİV PANELİ (Sadece isIdeOpen true ise görünür) */}
           {isIdeOpen && (
              <div className="w-1/2 flex flex-col bg-[#010014] border-l border-[#F2F3D9]/10 animate-in slide-in-from-right duration-300">
-                <div className="px-5 py-3 bg-[#030027] border-b border-[#F2F3D9]/10 flex justify-between items-center">
-                   <h4 className="text-xs font-bold text-[#DE7A00] uppercase tracking-widest flex items-center gap-2">
-                      <span className="w-2 h-2 bg-[#DE7A00] rounded-full animate-ping"></span> Laboratuvar Senkronize
-                   </h4>
-                   <span className="text-[10px] text-[#F2F3D9]/40 font-mono">live-editor.js</span>
+                <div className="px-5 py-3 bg-[#030027] border-b border-[#F2F3D9]/10 flex justify-between items-center z-10">
+                   <div className="flex gap-4">
+                      <button onClick={() => setShowArchive(false)} className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${!showArchive ? 'text-[#DE7A00]' : 'text-[#F2F3D9]/40 hover:text-[#F2F3D9]'}`}>Canlı Editör</button>
+                      <button onClick={() => setShowArchive(true)} className={`text-[10px] font-bold uppercase tracking-widest transition-colors ${showArchive ? 'text-[#DE7A00]' : 'text-[#F2F3D9]/40 hover:text-[#F2F3D9]'}`}>Geçmiş Arşiv</button>
+                   </div>
+                   {!showArchive && (
+                      <button onClick={() => setShowSnippetModal(true)} className="bg-[#DE7A00] hover:bg-[#c26a00] text-[#030027] text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg transition-colors">
+                         Kaydet
+                      </button>
+                   )}
                 </div>
-                {/* BASİT AMA ETKİLİ IDE TEXTAREA: 
-                   Gerçek bir editör eklentisi (CodeMirror vb) kurana kadar
-                   projeni patlatmayacak, siber laboratuvar hissiyatını sonuna kadar yaşatacak 
-                   özel monospaced textarea motorumuz.
-                */}
-                <textarea 
-                   value={liveCode}
-                   onChange={handleCodeChange}
-                   spellCheck="false"
-                   className="flex-1 bg-transparent p-5 text-[#F2F3D9] font-mono text-[13px] leading-loose outline-none resize-none custom-scrollbar"
-                   placeholder="// Kodunuzu buraya yazın..."
-                   style={{ tabSize: 4 }}
-                />
+
+                {!showArchive ? (
+                   <textarea 
+                      value={liveCode}
+                      onChange={handleCodeChange}
+                      spellCheck="false"
+                      className="flex-1 bg-transparent p-5 text-[#F2F3D9] font-mono text-[13px] leading-loose outline-none resize-none custom-scrollbar"
+                      placeholder="// Kodunuzu buraya yazın..."
+                      style={{ tabSize: 4 }}
+                   />
+                ) : (
+                   <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-[#02001a]/50">
+                      {!hub?.codeSnippets || hub.codeSnippets.length === 0 ? (
+                         <div className="text-center py-10 opacity-50">
+                            <p className="text-xs font-bold uppercase tracking-widest">Arşiv Boş</p>
+                            <p className="text-[10px] mt-2">Henüz kaydedilmiş bir kod parçacığı yok.</p>
+                         </div>
+                      ) : (
+                         hub.codeSnippets.map((snippet, idx) => (
+                            <div key={idx} className="bg-[#030027] border border-[#F2F3D9]/10 rounded-xl p-4 group">
+                               <div className="flex justify-between items-center mb-3">
+                                  <h4 className="text-xs font-bold text-[#DE7A00]">{snippet.title}</h4>
+                                  <div className="flex gap-3 text-[9px] text-[#F2F3D9]/40 uppercase font-bold tracking-widest">
+                                     <span>@{snippet.authorName}</span>
+                                     <span>{formatDate(snippet.savedAt)}</span>
+                                  </div>
+                               </div>
+                               <pre className="bg-[#010014] p-3 rounded-lg border border-[#F2F3D9]/5 text-[11px] text-[#F2F3D9] font-mono overflow-x-auto custom-scrollbar">
+                                  <code>{snippet.code}</code>
+                               </pre>
+                               <button onClick={() => { setLiveCode(snippet.code); setShowArchive(false); toast("Kod editöre aktarıldı", { icon: '💻' }); }} className="mt-3 w-full bg-[#F2F3D9]/5 hover:bg-[#F2F3D9]/10 text-[10px] font-bold uppercase tracking-widest py-2 rounded-lg transition-colors">
+                                  Editöre Aktar
+                               </button>
+                            </div>
+                         )).reverse()
+                      )}
+                   </div>
+                )}
              </div>
           )}
 

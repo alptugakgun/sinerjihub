@@ -39,7 +39,7 @@ export default function DashboardPage() {
   // --- HİKAYE (SİNYAL) SİSTEMİ DURUMLARI ---
   const [showStoryModal, setShowStoryModal] = useState(false);
   const [newStory, setNewStory] = useState("");
-  const [stories, setStories] = useState([]); // YENİ: Artık boş başlıyor, API'den dolacak!
+  const [stories, setStories] = useState([]); 
 
   // --- ETKİNLİK SİSTEMİ VERİSİ ---
   const events = [
@@ -47,7 +47,7 @@ export default function DashboardPage() {
     { id: 2, title: 'Gravimetrik Analiz Çözümleri', time: 'Yarın 15:00', attendees: 8 }
   ];
 
-  // --- 1. SOCKET VE BİLDİRİM DİNLEYİCİSİ ---
+  // --- 1. SOKET VE BİLDİRİM DİNLEYİCİLERİ ---
   useEffect(() => {
     socket.current = io("https://sinerjihub-1.onrender.com");
 
@@ -59,9 +59,9 @@ export default function DashboardPage() {
     });
 
     socket.current.on("newCommentUpdate", (data) => {
-        if (data.postId === openCommentsId) {
-            fetchComments(data.postId);
-        }
+      if (data.postId === openCommentsId) {
+        fetchComments(data.postId);
+      }
     });
 
     return () => {
@@ -69,7 +69,7 @@ export default function DashboardPage() {
     };
   }, [openCommentsId]);
 
-  // --- 2. VERİ ÇEKME MOTORU (BACKEND BAĞLANTILARI) ---
+  // --- 2. DİNAMİK VERİ ÇEKME MOTORU ---
   useEffect(() => {
     const fetchData = async () => {
       const userId = localStorage.getItem("userId");
@@ -78,27 +78,22 @@ export default function DashboardPage() {
       try {
         socket.current.emit("newUser", userId);
 
-        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
-        const userData = await userRes.json();
-        if (userRes.ok) { setUser(userData); } else { router.push("/login"); return; }
-
-        const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
-        setPosts(await postsRes.json());
-
-        const notifRes = await fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`);
-        setNotifications(await notifRes.json());
-
-        const friendRes = await fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`);
-        setFriendRequests(await friendRes.json());
-
-        // YENİ: SİNYALLERİ (HİKAYELERİ) VERİTABANINDAN ÇEKİYORUZ
-        const storiesRes = await fetch("https://sinerjihub-1.onrender.com/api/stories/active");
-        if (storiesRes.ok) {
-           setStories(await storiesRes.json());
-        }
+        const [userRes, postsRes, notifRes, friendRes, storiesRes] = await Promise.all([
+          fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`),
+          fetch("https://sinerjihub-1.onrender.com/api/posts/all"),
+          fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`),
+          fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`),
+          fetch("https://sinerjihub-1.onrender.com/api/stories/active")
+        ]);
+        
+        if (userRes.ok) setUser(await userRes.json()); else { router.push("/login"); return; }
+        if (postsRes.ok) setPosts(await postsRes.json());
+        if (notifRes.ok) setNotifications(await notifRes.json());
+        if (friendRes.ok) setFriendRequests(await friendRes.json());
+        if (storiesRes.ok) setStories(await storiesRes.json());
 
       } catch (error) { 
-        console.error("Veri yüklenirken hata oluştu:", error); 
+        console.error("Ekosistem verileri senkronize edilemedi:", error); 
       } finally { 
         setIsLoading(false); 
       }
@@ -106,10 +101,10 @@ export default function DashboardPage() {
     fetchData();
   }, [router]);
 
-  // --- HİKAYE (SİNYAL) EKLEME MOTORU ---
+  // --- 3. SİNYAL (HİKAYE) FIRLATMA FONKSİYONU ---
   const handleAddStory = async (e) => {
     e.preventDefault();
-    if(!newStory.trim()) return;
+    if (!newStory.trim()) return;
     const userId = localStorage.getItem("userId");
 
     try {
@@ -124,47 +119,30 @@ export default function DashboardPage() {
         setStories([savedStory, ...stories]);
         setNewStory("");
         setShowStoryModal(false);
-        toast.success("Anlık Sinyal fırlatıldı! (24 Saat Aktif)", { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #005700' } });
+        toast.success("Anlık sinyal yayıldı! (24 Saat Aktif)", { style: { background: '#005700', color: '#F2F3D9' } });
       }
     } catch (err) {
-      toast.error("Bağlantı hatası, sinyal gitmedi!", { style: { background: '#520000', color: '#F2F3D9' } });
+      toast.error("Bağlantı hatası, sinyal iletilemedi!", { style: { background: '#520000', color: '#F2F3D9' } });
     }
   };
 
-  const renderBadges = (roles) => {
-    if (!roles || roles.length === 0) return null;
-    return roles.map((role, idx) => {
-      if (role === "Gezgin") return null; 
-      let style = "bg-[#F2F3D9]/10 text-[#F2F3D9]/70 border-[#F2F3D9]/20";
-      let icon = "•";
-      
-      if (role === "Kurucu") { style = "bg-[#520000] text-[#F2F3D9] border-[#520000]"; icon = "👑"; }
-      if (role === "Moderatör") { style = "bg-[#005700] text-[#F2F3D9] border-[#005700]"; icon = "🛡️"; }
-      if (role === "Gamer") { style = "bg-[#DE7A00]/20 text-[#DE7A00] border-[#DE7A00]/40"; icon = "🎮"; }
-      if (role === "Kemik Tayfa") { style = "bg-[#F2F3D9] text-[#030027] border-[#F2F3D9]"; icon = "💎"; }
-      
-      return (
-        <span key={idx} className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${style} ml-2`}>
-          {icon} {role}
-        </span>
-      );
-    });
-  };
-
+  // --- 4. YORUM (YANKI) MEKANİZMASI ---
   const fetchComments = async (postId) => {
     try {
-        const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comments`);
-        const data = await res.json();
-        setActiveComments(prev => ({ ...prev, [postId]: data }));
-    } catch (err) { console.error("Yorumlar yüklenemedi."); }
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comments`);
+      const data = await res.json();
+      setActiveComments(prev => ({ ...prev, [postId]: data }));
+    } catch (err) { 
+      console.error("Yankılar yüklenemedi:", err); 
+    }
   };
 
   const toggleComments = (postId) => {
     if (openCommentsId === postId) {
-        setOpenCommentsId(null);
+      setOpenCommentsId(null);
     } else {
-        setOpenCommentsId(postId);
-        fetchComments(postId);
+      setOpenCommentsId(postId);
+      fetchComments(postId);
     }
   };
 
@@ -174,66 +152,41 @@ export default function DashboardPage() {
     const userId = localStorage.getItem("userId");
 
     try {
-        const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comment`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId, content: commentInput }),
-        });
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, content: commentInput }),
+      });
 
-        if (res.ok) {
-            const savedComment = await res.json();
-            setActiveComments(prev => ({
-                ...prev,
-                [postId]: [...(prev[postId] || []), savedComment]
-            }));
-            setCommentInput("");
-            setUser({ ...user, karmaPoints: (user.karmaPoints || 0) + 2 });
-            toast.success("Yankı fırlatıldı! +2 Karma", { style: { background: '#005700', color: '#F2F3D9' } });
-            socket.current.emit("newPostComment", { postId });
-            
-            const targetPost = posts.find(p => p._id === postId);
-            if (targetPost && targetPost.user !== userId) {
-              socket.current.emit("sendNotification", {
-                senderId: userId,
-                receiverId: targetPost.user,
-                type: "comment",
-                message: `@${user.username} sinerjine bir yankı bıraktı! 💬`
-              });
-            }
-        }
-    } catch (err) { alert("Yorum iletilemedi."); }
-    setIsCommenting(false);
-  };
-
-  const handleSendFriendRequest = async (targetId) => {
-    const userId = localStorage.getItem("userId");
-    try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, { method: "POST" });
-      const data = await res.json();
-      toast.success(data.message, { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00' } });
-    } catch (err) { alert("İstek gönderilemedi."); }
-  };
-
-  const handleAcceptFriend = async (friendId) => {
-    const userId = localStorage.getItem("userId");
-    try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/accept/${userId}/${friendId}`, { method: "POST" });
       if (res.ok) {
-        toast.success("Artık arkadaşsınız! ✨", { style: { background: '#005700', color: '#F2F3D9' } });
-        setFriendRequests(friendRequests.filter(req => req._id !== friendId));
-        const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
-        setUser(updatedUser);
-
-        socket.current.emit("sendNotification", {
-          senderId: userId,
-          receiverId: friendId,
-          type: "social",
-          message: `@${user.username} ağ bağlama isteğini kabul etti! ✨`
-        });
+        const savedComment = await res.json();
+        setActiveComments(prev => ({
+          ...prev,
+          [postId]: [...(prev[postId] || []), savedComment]
+        }));
+        setCommentInput("");
+        setUser(prev => prev ? { ...prev, karmaPoints: prev.karmaPoints + 2 } : null);
+        toast.success("Yankı fırlatıldı! +2 Karma", { style: { background: '#005700', color: '#F2F3D9' } });
+        socket.current.emit("newPostComment", { postId });
+        
+        const targetPost = posts.find(p => p._id === postId);
+        if (targetPost && targetPost.user !== userId) {
+          socket.current.emit("sendNotification", {
+            senderId: userId,
+            receiverId: targetPost.user,
+            type: "comment",
+            message: `@${user.username} sinerjine bir yankı bıraktı! 💬`
+          });
+        }
       }
-    } catch (err) { alert("İstek kabul edilemedi."); }
+    } catch (err) { 
+      console.error(err); 
+    } finally {
+      setIsCommenting(false);
+    }
   };
 
+  // --- 5. İLAN VE SOSYAL ETKİLEŞİM MOTORU ---
   const handleCreatePost = async (e) => {
     e.preventDefault();
     setIsPosting(true);
@@ -249,11 +202,14 @@ export default function DashboardPage() {
         const newPost = await res.json();
         setPosts([newPost, ...posts]);
         setPostContent(""); setPostTags(""); setIsModalOpen(false);
-        setUser({ ...user, karmaPoints: (user.karmaPoints || 0) + 5 });
+        setUser(prev => prev ? { ...prev, karmaPoints: prev.karmaPoints + 5 } : null);
         toast.success("İlan başarıyla yayınlandı! +5 Karma", { style: { background: '#005700', color: '#F2F3D9' } });
       }
-    } catch (err) { alert("İlan paylaşılamadı."); }
-    setIsPosting(false);
+    } catch (err) { 
+      alert("İlan paylaşılamadı."); 
+    } finally {
+      setIsPosting(false);
+    }
   };
 
   const handleUpvote = async (postId) => {
@@ -276,7 +232,42 @@ export default function DashboardPage() {
           });
         }
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      console.error(err); 
+    }
+  };
+
+  const handleSendFriendRequest = async (targetId) => {
+    const userId = localStorage.getItem("userId");
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, { method: "POST" });
+      const data = await res.json();
+      toast.success(data.message, { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00' } });
+    } catch (err) { 
+      alert("İstek gönderilemedi."); 
+    }
+  };
+
+  const handleAcceptFriend = async (friendId) => {
+    const userId = localStorage.getItem("userId");
+    try {
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/accept/${userId}/${friendId}`, { method: "POST" });
+      if (res.ok) {
+        toast.success("Artık arkadaşsınız! ✨", { style: { background: '#005700', color: '#F2F3D9' } });
+        setFriendRequests(friendRequests.filter(req => req._id !== friendId));
+        const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
+        setUser(updatedUser);
+
+        socket.current.emit("sendNotification", {
+          senderId: userId,
+          receiverId: friendId,
+          type: "social",
+          message: `@${user.username} ağ bağlama isteğini kabul etti! ✨`
+        });
+      }
+    } catch (err) { 
+      alert("İstek kabul edilemedi."); 
+    }
   };
 
   const getTrendingTags = () => {
@@ -291,11 +282,9 @@ export default function DashboardPage() {
     });
     return Object.entries(tagCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([tag, count]) => ({ tag, count }));
   };
-  const trendingTags = getTrendingTags();
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  };
+  const trendingTags = getTrendingTags();
+  const formatDate = (dateString) => new Date(dateString).toLocaleDateString('tr-TR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 
   const getKarmaRank = (karma) => {
     if (karma < 50) return { title: "Sinerji Çaylağı", icon: "🌱", color: "text-[#005700]", border: "border-[#005700]/30", bg: "bg-[#005700]/10" };
@@ -304,10 +293,22 @@ export default function DashboardPage() {
     return { title: "Ekosistem Lideri", icon: "👑", color: "text-[#520000]", border: "border-[#520000]/30", bg: "bg-[#520000]/10" };
   };
 
+  const renderBadges = (roles) => {
+    if (!roles || roles.length === 0) return null;
+    return roles.map((role, idx) => {
+      if (role === "Gezgin") return null; 
+      let style = "bg-[#F2F3D9]/10 text-[#F2F3D9]/70 border-[#F2F3D9]/20";
+      let icon = "•";
+      if (role === "Kurucu") { style = "bg-[#520000] text-[#F2F3D9] border-[#520000]"; icon = "👑"; }
+      if (role === "Moderatör") { style = "bg-[#005700] text-[#F2F3D9] border-[#005700]"; icon = "🛡️"; }
+      if (role === "Gamer") { style = "bg-[#DE7A00]/20 text-[#DE7A00] border-[#DE7A00]/40"; icon = "🎮"; }
+      if (role === "Kemik Tayfa") { style = "bg-[#F2F3D9] text-[#030027] border-[#F2F3D9]"; icon = "💎"; }
+      return <span key={idx} className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${style} ml-2`}>{icon} {role}</span>;
+    });
+  };
+
   const filteredPosts = posts.filter(post => {
-    const matchesSearch = post.content.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          post.username.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (post.tags && post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())));
+    const matchesSearch = post.content.toLowerCase().includes(searchQuery.toLowerCase()) || post.username.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesTag = selectedTag ? (post.tags && post.tags.some(tag => tag.toLowerCase() === selectedTag.toLowerCase())) : true;
     return matchesSearch && matchesTag;
   });
@@ -315,11 +316,11 @@ export default function DashboardPage() {
   if (isLoading) return (
     <div className="min-h-screen bg-[#030027] flex items-center justify-center text-[#F2F3D9] flex-col">
       <div className="w-12 h-12 border-4 border-[#DE7A00] border-t-transparent rounded-full animate-spin mb-4"></div>
-      <p className="font-bold tracking-widest uppercase text-xs">Ağ Kuruluyor...</p>
+      <p className="font-bold tracking-widest uppercase text-xs">Sinerji Yükleniyor...</p>
     </div>
   );
 
-  const totalNotifs = notifications.filter(n=>!n.isRead).length + friendRequests.length;
+  const totalNotifs = notifications.filter(n => !n.isRead).length + friendRequests.length;
   const userRank = getKarmaRank(user?.karmaPoints || 0);
 
   return (
@@ -329,8 +330,8 @@ export default function DashboardPage() {
       {/* --- SİNYAL (HİKAYE) EKLEME MODALI --- */}
       {showStoryModal && (
         <div className="fixed inset-0 bg-[#030027]/90 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
-          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-sm shadow-2xl">
-            <h3 className="text-xl font-bold mb-2 text-[#F2F3D9]">Anlık Sinyal Fırlat</h3>
+          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-sm shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="text-xl font-bold mb-2">Anlık Sinyal Fırlat</h3>
             <p className="text-[11px] text-[#F2F3D9]/60 mb-6">Sinyaller 24 saat sonra sistemden silinir.</p>
             <form onSubmit={handleAddStory} className="space-y-4">
               <input type="text" value={newStory} onChange={(e) => setNewStory(e.target.value)} className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl p-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" placeholder="Neler oluyor?" required />
@@ -346,7 +347,7 @@ export default function DashboardPage() {
         <div className="fixed inset-0 bg-[#030027]/80 backdrop-blur-sm z-[80] flex justify-end">
           <div className="w-full md:w-80 bg-[#02001a] h-full p-6 border-l border-[#F2F3D9]/10 overflow-y-auto animate-in slide-in-from-right duration-300 custom-scrollbar">
             <div className="flex justify-between items-center mb-8 border-b border-[#F2F3D9]/10 pb-4">
-              <h3 className="font-bold text-lg text-[#F2F3D9]">Sinerji Akışı</h3>
+              <h3 className="font-bold text-lg">Sinerji Akışı</h3>
               <button onClick={() => setIsNotifOpen(false)} className="text-2xl text-[#F2F3D9]/50 hover:text-[#DE7A00] transition-colors">&times;</button>
             </div>
             
@@ -375,8 +376,8 @@ export default function DashboardPage() {
       {/* --- İLAN AÇMA MODALI --- */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-[#030027]/90 backdrop-blur-sm z-[90] flex items-center justify-center p-4">
-          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-lg shadow-2xl">
-            <h3 className="text-2xl font-bold mb-2 text-[#F2F3D9]">Yeni İlan Yarat</h3>
+          <div className="bg-[#02001a] border border-[#DE7A00]/30 rounded-2xl p-8 w-full max-w-lg shadow-2xl animate-in zoom-in duration-200">
+            <h3 className="text-2xl font-bold mb-2">Yeni İlan Yarat</h3>
             <p className="text-xs text-[#F2F3D9]/60 mb-6">Kod blokları için ``` kullanabilirsin.</p>
             <form onSubmit={handleCreatePost} className="space-y-4">
               <textarea value={postContent} onChange={(e) => setPostContent(e.target.value)} className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl p-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] h-32 resize-none transition-colors" placeholder="İçeriği buraya girin..." required />
@@ -389,10 +390,8 @@ export default function DashboardPage() {
       )}
 
       {/* --- SIDEBAR --- */}
-      <aside className="w-72 bg-[#02001a] border-r border-[#F2F3D9]/10 hidden md:flex flex-col p-8 h-screen sticky top-0 z-10">
-        <h1 className="text-2xl font-bold text-[#F2F3D9] mb-12 tracking-wide">
-          SINERJI<span className="text-[#DE7A00]">HUB</span>
-        </h1>
+      <aside className="w-72 bg-[#02001a] border-r border-[#F2F3D9]/10 hidden md:flex flex-col p-8 h-screen sticky top-0 z-10 select-none">
+        <h1 className="text-2xl font-bold text-[#F2F3D9] mb-12 tracking-wide">SINERJI<span className="text-[#DE7A00]">HUB</span></h1>
         <nav className="flex-1 space-y-2">
           <Link href="/dashboard" className="flex items-center gap-4 bg-[#F2F3D9]/10 px-5 py-4 rounded-xl border border-[#F2F3D9]/20">
             <span className="text-lg">🏠</span> <span className="font-semibold text-sm text-[#F2F3D9]">Ana Üs</span>
@@ -430,9 +429,7 @@ export default function DashboardPage() {
       <main className="flex-1 p-6 md:p-10 overflow-y-auto custom-scrollbar">
         <header className="flex justify-between items-start mb-10 border-b border-[#F2F3D9]/10 pb-6">
           <div>
-            <h2 className="text-3xl font-bold text-[#F2F3D9] mb-2">
-              Hoş Geldin, {user?.username}.
-            </h2>
+            <h2 className="text-3xl font-bold text-[#F2F3D9] mb-2">Hoş Geldin, {user?.username}.</h2>
             <p className="text-[#F2F3D9]/60 text-sm">Ağındaki son gelişmeler ve trendler.</p>
           </div>
           <button onClick={() => setIsModalOpen(true)} className="hidden md:block bg-[#DE7A00] px-6 py-3 rounded-xl font-bold text-sm text-[#030027] hover:bg-[#c26a00] transition-colors shadow-sm">İlan Oluştur</button>
@@ -440,21 +437,19 @@ export default function DashboardPage() {
 
         {/* HİKAYELER / ANLIK SİNYALLER BÖLÜMÜ */}
         <div className="flex gap-6 overflow-x-auto pb-6 mb-8 custom-scrollbar items-center">
-            <button onClick={() => setShowStoryModal(true)} className="flex flex-col items-center gap-2 flex-shrink-0 group">
-               <div className="w-16 h-16 rounded-2xl bg-[#F2F3D9]/5 border border-dashed border-[#F2F3D9]/30 flex items-center justify-center text-2xl text-[#F2F3D9]/50 group-hover:border-[#DE7A00] group-hover:text-[#DE7A00] transition-colors">
-                  +
-               </div>
-               <span className="text-[10px] font-semibold text-[#F2F3D9]/60 group-hover:text-[#F2F3D9] transition-colors">Sinyal Ekle</span>
-            </button>
+          <button onClick={() => setShowStoryModal(true)} className="flex flex-col items-center gap-2 flex-shrink-0 group">
+             <div className="w-16 h-16 rounded-2xl bg-[#F2F3D9]/5 border border-dashed border-[#F2F3D9]/30 flex items-center justify-center text-2xl text-[#F2F3D9]/50 group-hover:border-[#DE7A00] group-hover:text-[#DE7A00] transition-colors">+</div>
+             <span className="text-[10px] font-semibold text-[#F2F3D9]/60 group-hover:text-[#F2F3D9] transition-colors">Sinyal Ekle</span>
+          </button>
 
-            {stories.map(story => (
-               <div key={story._id} className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer" onClick={() => toast(story.content, { icon: '💬', style: {background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00'} })}>
-                  <div className="w-16 h-16 rounded-2xl bg-[#030027] border-2 border-[#DE7A00] flex items-center justify-center overflow-hidden font-bold text-xl text-[#F2F3D9]">
-                     {story.user?.profilePicture ? <img src={story.user.profilePicture} className="w-full h-full object-cover"/> : story.user?.username?.[0].toUpperCase()}
-                  </div>
-                  <span className="text-[10px] font-semibold text-[#F2F3D9]/80">{story.user?.username}</span>
-               </div>
-            ))}
+          {stories.map(story => (
+             <div key={story._id} className="flex flex-col items-center gap-2 flex-shrink-0 cursor-pointer animate-in fade-in duration-300" onClick={() => toast(story.content, { icon: '💬', style: { background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00' } })}>
+                <div className="w-16 h-16 rounded-2xl bg-[#030027] border-2 border-[#DE7A00] flex items-center justify-center overflow-hidden font-bold text-xl text-[#F2F3D9]">
+                   {story.user?.profilePicture ? <img src={story.user.profilePicture} className="w-full h-full object-cover"/> : story.user?.username?.[0].toUpperCase()}
+                </div>
+                <span className="text-[10px] font-semibold text-[#F2F3D9]/80">{story.user?.username}</span>
+             </div>
+          ))}
         </div>
 
         {/* ARAMA BAR */}
@@ -475,19 +470,16 @@ export default function DashboardPage() {
             {selectedTag && (
               <div className="bg-[#DE7A00]/10 border border-[#DE7A00]/30 px-5 py-3 rounded-xl flex justify-between items-center">
                 <span className="text-sm font-medium text-[#F2F3D9]">
-                  <span className="text-[#DE7A00] mr-2">#</span> 
-                  Şu an <strong>{selectedTag}</strong> etiketini inceliyorsun.
+                  <span className="text-[#DE7A00] mr-2">#</span> Şu an <strong>{selectedTag}</strong> etiketini inceliyorsun.
                 </span>
-                <button onClick={() => setSelectedTag(null)} className="text-[10px] bg-[#030027] border border-[#F2F3D9]/20 text-[#F2F3D9] font-bold px-3 py-1.5 rounded-md hover:border-[#DE7A00] transition-colors">
-                  Temizle
-                </button>
+                <button onClick={() => setSelectedTag(null)} className="text-[10px] bg-[#030027] border border-[#F2F3D9]/20 text-[#F2F3D9] font-bold px-3 py-1.5 rounded-md hover:border-[#DE7A00] transition-colors">Temizle</button>
               </div>
             )}
             
             <div className="space-y-6">
               {filteredPosts.length === 0 ? (
                 <div className="text-center py-16 bg-[#F2F3D9]/5 rounded-2xl border border-[#F2F3D9]/10">
-                    <p className="text-[#F2F3D9]/50 text-sm">Kriterlere uygun ilan bulunamadı.</p>
+                  <p className="text-[#F2F3D9]/50 text-sm">Kriterlere uygun ilan bulunamadı.</p>
                 </div>
               ) : (
                 filteredPosts.map(post => (
@@ -523,22 +515,15 @@ export default function DashboardPage() {
                     {post.tags?.length > 0 && (
                       <div className="flex flex-wrap gap-2 mb-6">
                         {post.tags.map((tag, idx) => (
-                          <button 
-                            key={idx} 
-                            onClick={() => setSelectedTag(tag)}
-                            className="text-xs font-medium bg-[#F2F3D9]/5 text-[#F2F3D9]/70 border border-[#F2F3D9]/10 hover:border-[#DE7A00] hover:text-[#DE7A00] px-3 py-1 rounded-lg transition-colors"
-                          >
-                            #{tag}
-                          </button>
+                          <button key={idx} onClick={() => setSelectedTag(tag)} className="text-xs font-medium bg-[#F2F3D9]/5 text-[#F2F3D9]/70 border border-[#F2F3D9]/10 hover:border-[#DE7A00] hover:text-[#DE7A00] px-3 py-1 rounded-lg transition-colors">#{tag}</button>
                         ))}
                       </div>
                     )}
 
                     <div className="flex gap-3 mt-auto pt-4 border-t border-[#F2F3D9]/10">
                       <button onClick={() => handleUpvote(post._id)} className="flex-1 bg-[#F2F3D9]/5 py-2.5 rounded-xl text-xs font-bold text-[#F2F3D9] hover:bg-[#DE7A00] hover:text-[#030027] transition-colors border border-transparent">Destek ({post.upvotes?.length || 0})</button>
-                      
                       <button onClick={() => toggleComments(post._id)} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors border ${openCommentsId === post._id ? "bg-[#DE7A00]/10 text-[#DE7A00] border-[#DE7A00]/30" : "bg-[#F2F3D9]/5 text-[#F2F3D9] border-transparent hover:bg-[#F2F3D9]/10"}`}>
-                          Yankılar {activeComments[post._id]?.length > 0 && `(${activeComments[post._id].length})`}
+                        Yankılar {activeComments[post._id]?.length > 0 && `(${activeComments[post._id].length})`}
                       </button>
 
                       {post.user !== user?._id && (
@@ -552,7 +537,7 @@ export default function DashboardPage() {
                     </div>
 
                     {openCommentsId === post._id && (
-                      <div className="mt-6 pt-6 border-t border-[#F2F3D9]/10">
+                      <div className="mt-6 pt-6 border-t border-[#F2F3D9]/10 animate-in slide-in-from-top-2 duration-200">
                           <div className="space-y-4 mb-6">
                               {activeComments[post._id]?.length === 0 ? (
                                   <p className="text-xs text-[#F2F3D9]/40 text-center">Bu ilana henüz yankı gelmedi.</p>
@@ -584,9 +569,7 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex gap-2">
                               <input type="text" value={commentInput} onChange={(e) => setCommentInput(e.target.value)} placeholder="Yankı ekle..." className="flex-1 bg-[#030027] border border-[#F2F3D9]/10 rounded-xl px-4 py-2.5 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors" />
-                              <button onClick={() => handleSendComment(post._id)} disabled={isCommenting || !commentInput.trim()} className="bg-[#DE7A00] text-[#030027] hover:bg-[#c26a00] px-5 rounded-xl text-xs font-bold transition-colors disabled:opacity-50">
-                                  GÖNDER
-                              </button>
+                              <button onClick={() => handleSendComment(post._id)} disabled={isCommenting || !commentInput.trim()} className="bg-[#DE7A00] text-[#030027] hover:bg-[#c26a00] px-5 rounded-xl text-xs font-bold transition-colors disabled:opacity-50">GÖNDER</button>
                           </div>
                       </div>
                     )}
@@ -598,7 +581,6 @@ export default function DashboardPage() {
 
           {/* SAĞ KOLON: TRENDLER VE ETKİNLİKLER */}
           <div className="space-y-6">
-            
             <div className="bg-[#02001a] border border-[#F2F3D9]/10 p-6 rounded-2xl">
               <h3 className="text-sm font-bold mb-4 text-[#F2F3D9]">Popüler Konular</h3>
               <div className="flex flex-wrap gap-2">
@@ -606,11 +588,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-[#F2F3D9]/50">Henüz trend yok.</p>
                 ) : (
                   trendingTags.map((item, idx) => (
-                    <button 
-                      key={idx} 
-                      onClick={() => setSelectedTag(item.tag)}
-                      className="bg-[#F2F3D9]/5 border border-[#F2F3D9]/10 hover:border-[#DE7A00] text-[#F2F3D9]/80 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-2"
-                    >
+                    <button key={idx} onClick={() => setSelectedTag(item.tag)} className="bg-[#F2F3D9]/5 border border-[#F2F3D9]/10 hover:border-[#DE7A00] text-[#F2F3D9]/80 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-2">
                       {item.tag} <span className="text-[#DE7A00] text-[10px]">{item.count}</span>
                     </button>
                   ))
@@ -630,20 +608,15 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     ))}
-                    <button className="w-full mt-2 bg-[#F2F3D9]/5 text-[#F2F3D9] hover:bg-[#F2F3D9]/10 py-2.5 rounded-xl text-xs font-bold transition-colors">
-                        Tümünü Gör
-                    </button>
+                    <button className="w-full mt-2 bg-[#F2F3D9]/5 text-[#F2F3D9] hover:bg-[#F2F3D9]/10 py-2.5 rounded-xl text-xs font-bold transition-colors">Tümünü Gör</button>
                 </div>
             </div>
 
             <div className="bg-[#030027] border border-[#DE7A00]/30 p-6 rounded-2xl text-center">
                <h3 className="text-base font-bold text-[#F2F3D9] mb-2">Sinerji Ağı Genişliyor</h3>
                <p className="text-xs text-[#F2F3D9]/60 mb-5">Yeni kabileler ve gezginlerle eşleşmek için Keşfet'e göz at.</p>
-               <Link href="/explore" className="inline-block w-full bg-[#DE7A00] hover:bg-[#c26a00] text-[#030027] font-bold text-xs px-5 py-3 rounded-xl transition-colors">
-                  Keşfet'e Git
-               </Link>
+               <Link href="/explore" className="inline-block w-full bg-[#DE7A00] hover:bg-[#c26a00] text-[#030027] font-bold text-xs px-5 py-3 rounded-xl transition-colors">Keşfet'e Git</Link>
             </div>
-
           </div>
         </div>
       </main>
