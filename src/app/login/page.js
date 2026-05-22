@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Toaster, toast } from "react-hot-toast";
-import Cookies from "js-cookie"; // YENİ: Çerez yöneticisi
+import Cookies from "js-cookie";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -11,10 +11,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sayfa yüklendiğinde eski/bozuk ID varsa hafızayı ve çerezleri temizle ki döngüye girmesin
   useEffect(() => {
     localStorage.removeItem("userId");
-    Cookies.remove("token"); // YENİ: Eski şifreli bileti yırt at
+    Cookies.remove("token"); 
   }, []);
 
   const handleLogin = async (e) => {
@@ -33,75 +32,67 @@ export default function LoginPage() {
       const data = await res.json();
 
       if (res.ok) {
-        // --- YENİ EKLENEN: BİLGİLERİ VE TOKENI KAYDET ---
-        // data.user._id (Eskiden sadece data._id idi, çünkü backend artık {user, token} dönüyor)
         localStorage.setItem("userId", data.user._id);
-        
-        // Middleware'in okuyabilmesi için Token'ı tarayıcı çerezlerine 7 günlük yazıyoruz
         Cookies.set("token", data.token, { expires: 7, secure: true });
         
-        toast.success("SinerjiHub'a hoş geldin! Yönlendiriliyorsun...", {
-          style: { background: '#1f2937', color: '#fff', border: '1px solid #374151' }
+        toast.success("Kimlik doğrulandı! Yönlendiriliyorsun...", {
+          style: { background: '#005700', color: '#F2F3D9' }
         });
 
-        // Baloncuk görünsün diye 1 saniye bekleyip Dashboard'a atıyoruz
         setTimeout(() => {
           router.push("/dashboard");
         }, 1000);
         
       } else {
-        // Şifre yanlışsa veya e-posta yoksa backend'den gelen hatayı baloncukla göster
-        toast.error(data.message || "Giriş başarısız.", {
-          style: { background: '#7f1d1d', color: '#fff', border: '1px solid #991b1b' }
+        toast.error(data.message || "Erişim reddedildi.", {
+          style: { background: '#520000', color: '#F2F3D9' }
         });
         setIsLoading(false);
       }
     } catch (err) {
-      toast.error("Sunucuya ulaşılamıyor. Render uyanıyor olabilir, biraz bekle dostum.", {
-        style: { background: '#7f1d1d', color: '#fff', border: '1px solid #991b1b' }
+      toast.error("Sunucu yanıt vermiyor. Sistem uyanıyor olabilir.", {
+        style: { background: '#520000', color: '#F2F3D9' }
       });
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white flex items-center justify-center p-6 font-sans relative overflow-hidden bg-grid-slate-900/[0.04]">
-      
-      {/* Bildirim Baloncukları */}
+    <div className="min-h-screen bg-[#030027] text-[#F2F3D9] flex items-center justify-center p-6 font-sans relative overflow-hidden">
       <Toaster position="top-center" reverseOrder={false} />
-
-      {/* Arka Plan Efektleri */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 rounded-full blur-[100px] -z-10 animate-pulse"></div>
       
-      <div className="w-full max-w-md bg-gray-900/60 backdrop-blur-xl border border-gray-800 rounded-[2.5rem] p-10 shadow-2xl">
+      {/* Arka Plan Efekti */}
+      <div className="absolute top-0 right-0 w-96 h-96 bg-[#DE7A00]/5 rounded-full blur-[100px] -z-10"></div>
+      
+      <div className="w-full max-w-md bg-[#02001a] border border-[#F2F3D9]/10 rounded-2xl p-10 shadow-2xl">
         <div className="text-center mb-10">
-          <h1 className="text-3xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500 tracking-tighter italic mb-2">
-            SINERJIHUB
+          <h1 className="text-3xl font-black text-[#F2F3D9] tracking-wide mb-2">
+            SINERJI<span className="text-[#DE7A00]">HUB</span>
           </h1>
-          <p className="text-gray-400 text-xs font-bold uppercase tracking-widest">Ekosisteme Giriş Yap</p>
+          <p className="text-[#F2F3D9]/50 text-[10px] font-bold uppercase tracking-widest">Merkezi Otorite Girişi</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 ml-2">E-Posta Adresi</label>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-[#F2F3D9]/60 mb-2 ml-2">Kurumsal E-Posta</label>
             <input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full bg-gray-800/50 border border-gray-700 rounded-2xl px-5 py-4 text-sm text-white outline-none focus:border-blue-500/50 transition-all shadow-inner"
+              className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl px-5 py-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors shadow-inner"
               placeholder="gezgin@sinerjihub.com"
             />
           </div>
 
           <div>
-            <label className="block text-[10px] font-black uppercase tracking-widest text-gray-500 mb-2 ml-2">Şifre</label>
+            <label className="block text-[10px] font-bold uppercase tracking-widest text-[#F2F3D9]/60 mb-2 ml-2">Güvenlik Şifresi</label>
             <input
               type="password"
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full bg-gray-800/50 border border-gray-700 rounded-2xl px-5 py-4 text-sm text-white outline-none focus:border-blue-500/50 transition-all shadow-inner"
+              className="w-full bg-[#030027] border border-[#F2F3D9]/20 rounded-xl px-5 py-4 text-sm text-[#F2F3D9] outline-none focus:border-[#DE7A00] transition-colors shadow-inner"
               placeholder="••••••••"
             />
           </div>
@@ -109,17 +100,17 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-black py-4 rounded-2xl uppercase tracking-widest text-xs transition-all shadow-[0_0_20px_rgba(37,99,235,0.3)] active:scale-95 disabled:opacity-50 mt-4"
+            className="w-full bg-[#DE7A00] hover:bg-[#c26a00] text-[#030027] font-black py-4 rounded-xl uppercase tracking-widest text-xs transition-colors disabled:opacity-50 mt-4"
           >
-            {isLoading ? "SİNERJİ BAĞLANIYOR..." : "SİSTEME GİR"}
+            {isLoading ? "DOĞRULANIYOR..." : "OTURUM AÇ"}
           </button>
         </form>
 
-        <div className="mt-8 text-center border-t border-gray-800 pt-6">
-          <p className="text-gray-500 text-xs font-medium">
-            Henüz kabileye katılmadın mı?{" "}
-            <Link href="/register" className="text-blue-400 font-bold hover:text-blue-300 transition-colors underline decoration-blue-500/30 underline-offset-4">
-              Hesap Oluştur
+        <div className="mt-8 text-center border-t border-[#F2F3D9]/10 pt-6">
+          <p className="text-[#F2F3D9]/50 text-xs font-medium">
+            Henüz ağa dahil olmadın mı?{" "}
+            <Link href="/register" className="text-[#DE7A00] font-bold hover:underline underline-offset-4">
+              Kayıt Formu Oluştur
             </Link>
           </p>
         </div>

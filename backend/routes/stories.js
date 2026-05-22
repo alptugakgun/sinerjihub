@@ -1,4 +1,4 @@
-const express = require('routes');
+const express = require('express'); // <-- HATA BURADAYDI, DÜZELTİLDİ!
 const router = express.Router();
 const Story = require('../models/Story');
 const User = require('../models/User');
