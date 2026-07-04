@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
 const User = require('../models/User');
 const Hub = require('../models/Hub'); 
@@ -18,10 +19,17 @@ router.post('/create', verifyToken, async (req, res) => {
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
     if (user.karmaPoints < 50) return res.status(403).json({ message: "Özel kabile kurmak için en az 50 Sinerji Puanına (Ağ Gezgini) ulaşmalısın!" });
 
+    // GÜVENLİK: passcode artık düz metin değil, hash'lenmiş olarak saklanıyor.
+    let hashedPasscode = "";
+    if (isPrivate && passcode) {
+      const salt = await bcrypt.genSalt(10);
+      hashedPasscode = await bcrypt.hash(passcode, salt);
+    }
+
     const newHub = new Hub({
       name, category, description, icon, 
       isPrivate: isPrivate || false, 
-      passcode: passcode || "", 
+      passcode: hashedPasscode, 
       creator: creatorId || null,
       members: creatorId ? [creatorId] : [] 
     });
@@ -32,7 +40,11 @@ router.post('/create', verifyToken, async (req, res) => {
        await User.findByIdAndUpdate(creatorId, { $push: { hubs: savedHub._id } });
     }
 
-    res.status(201).json(savedHub);
+    // GÜVENLİK: response'a passcode (hash olsa bile) hiç dahil edilmesin.
+    const hubToReturn = savedHub.toObject();
+    delete hubToReturn.passcode;
+
+    res.status(201).json(hubToReturn);
   } catch (err) {
     res.status(500).json({ message: "Kabile oluşturulurken evrende bir hata oluştu.", error: err.message });
   }
@@ -41,7 +53,8 @@ router.post('/create', verifyToken, async (req, res) => {
 // 2. TÜM KABİLELERİ GETİR 
 router.get('/all', async (req, res) => {
   try {
-    const hubs = await Hub.find().populate('members', 'username profilePicture karmaPoints');
+    // GÜVENLİK: passcode (hash olsa bile) hiçbir zaman client'a gönderilmemeli.
+    const hubs = await Hub.find().select('-passcode').populate('members', 'username profilePicture karmaPoints');
     res.status(200).json(hubs);
   } catch (err) {
     res.status(500).json({ message: "Kabileler getirilemedi.", error: err.message });
@@ -51,7 +64,8 @@ router.get('/all', async (req, res) => {
 // 3. TEK BİR KABİLE DETAYI 
 router.get('/:id', async (req, res) => {
   try {
-    const hub = await Hub.findById(req.params.id).populate('members', 'username profilePicture karmaPoints');
+    // GÜVENLİK: passcode (hash olsa bile) hiçbir zaman client'a gönderilmemeli.
+    const hub = await Hub.findById(req.params.id).select('-passcode').populate('members', 'username profilePicture karmaPoints');
     if (!hub) return res.status(404).json({ message: "Bu kabile bulunamadı veya silinmiş." });
     res.status(200).json(hub);
   } catch (err) {
@@ -70,7 +84,14 @@ router.post('/join', verifyToken, async (req, res) => {
     const user = await User.findById(userId);
 
     if (!hub || !user) return res.status(404).json({ message: "Kullanıcı veya Kabile bulunamadı." });
-    if (hub.isPrivate && hub.passcode !== enteredPasscode) return res.status(401).json({ message: "Hatalı şifre! Bu özel kabileye giriş iznin yok." });
+
+    // GÜVENLİK: passcode artık hash'li saklandığı için düz eşitlik değil, bcrypt.compare kullanıyoruz.
+    if (hub.isPrivate) {
+      const passcodeMatches = await bcrypt.compare(enteredPasscode || "", hub.passcode || "");
+      if (!passcodeMatches) {
+        return res.status(401).json({ message: "Hatalı şifre! Bu özel kabileye giriş iznin yok." });
+      }
+    }
 
     if (!hub.members.includes(userId)) {
       hub.members.push(userId);
