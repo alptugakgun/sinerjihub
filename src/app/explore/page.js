@@ -26,14 +26,14 @@ export default function ExplorePage() {
       if (!userId || userId === "undefined") { router.push("/login"); return; }
 
       try {
-        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" });
         const userData = await userRes.json();
         if (userRes.ok) { setUser(userData); } else { router.push("/login"); return; }
 
-        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
+        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all", { credentials: "include" });
         setHubs(await hubsRes.json());
 
-        const recRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/recommendations/${userId}`);
+        const recRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/recommendations/${userId}`, { credentials: "include" });
         setRecommendations(await recRes.json());
 
       } catch (error) { 
@@ -58,6 +58,7 @@ export default function ExplorePage() {
 
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/hubs/create", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...hubForm, creatorId: userId }),
@@ -83,6 +84,7 @@ export default function ExplorePage() {
     const userId = localStorage.getItem("userId");
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/hubs/join", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, hubId }),
@@ -100,7 +102,8 @@ export default function ExplorePage() {
   const handleSendFriendRequest = async (targetId) => {
     const userId = localStorage.getItem("userId");
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, { method: "POST" });
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, {
+        credentials: "include", method: "POST" });
       const data = await res.json();
       toast.success(data.message, { style: { background: '#1f2937', color: '#fff' } });
       setRecommendations(recommendations.filter(rec => rec._id !== targetId));

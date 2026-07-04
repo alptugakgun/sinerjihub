@@ -40,7 +40,7 @@ export default function ProfilePage() {
       }
 
       try {
-        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" });
         if (userRes.ok) {
           const userData = await userRes.json();
           setUser(userData);
@@ -58,7 +58,7 @@ export default function ProfilePage() {
           return;
         }
 
-        const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
+        const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all", { credentials: "include" });
         if (postsRes.ok) {
           const allPosts = await postsRes.json();
           const myPosts = allPosts.filter(post => post.user === userId);
@@ -73,7 +73,7 @@ export default function ProfilePage() {
           setUserSkills(Array.from(skillsSet));
         }
 
-        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
+        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all", { credentials: "include" });
         if (hubsRes.ok) {
           const allHubs = await hubsRes.json();
           const myHubs = allHubs.filter(hub => hub.members.some(member => member._id === userId));
@@ -111,6 +111,7 @@ export default function ProfilePage() {
 
       try {
         const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/update-avatar/${userId}`, {
+        credentials: "include",
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ profilePicture: base64Image }),
@@ -143,6 +144,7 @@ export default function ProfilePage() {
 
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/update-profile/${userId}`, {
+        credentials: "include",
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -182,6 +184,7 @@ export default function ProfilePage() {
 
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/feedback/submit", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

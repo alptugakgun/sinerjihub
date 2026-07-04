@@ -101,11 +101,11 @@ export default function HubRoomPage() {
       if (!userId || userId === "undefined") { router.push("/login"); return; }
 
       try {
-        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" });
         const userData = await userRes.json();
         if (userRes.ok) { setUser(userData); } else { router.push("/login"); return; }
 
-        const hubRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/all`);
+        const hubRes = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/all`, { credentials: "include" });
         const allHubs = await hubRes.json();
         const currentHub = allHubs.find((h) => h._id === hubId);
         
@@ -145,6 +145,7 @@ export default function HubRoomPage() {
 
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/hubs/${hubId}/code/save`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

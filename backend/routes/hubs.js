@@ -5,17 +5,18 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Hub = require('../models/Hub'); 
 const Message = require('../models/Message'); 
+const { verifyToken } = require('../middleware/verifyToken');
 
 // 1. KULLANICI / ADMIN TARAFINDAN KABİLE OLUŞTURMA
-router.post('/create', async (req, res) => {
+router.post('/create', verifyToken, async (req, res) => {
   try {
-    const { name, category, description, icon, isPrivate, passcode, creatorId } = req.body;
+    const { name, category, description, icon, isPrivate, passcode } = req.body;
+    // GÜVENLİK: creatorId artık token'dan geliyor, başkası adına kabile açılamaz.
+    const creatorId = req.userId;
     
-    if (creatorId) {
-      const user = await User.findById(creatorId);
-      if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
-      if (user.karmaPoints < 50) return res.status(403).json({ message: "Özel kabile kurmak için en az 50 Sinerji Puanına (Ağ Gezgini) ulaşmalısın!" });
-    }
+    const user = await User.findById(creatorId);
+    if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+    if (user.karmaPoints < 50) return res.status(403).json({ message: "Özel kabile kurmak için en az 50 Sinerji Puanına (Ağ Gezgini) ulaşmalısın!" });
 
     const newHub = new Hub({
       name, category, description, icon, 
@@ -59,9 +60,11 @@ router.get('/:id', async (req, res) => {
 });
 
 // 4. KABİLEYE KATILMA
-router.post('/join', async (req, res) => {
+router.post('/join', verifyToken, async (req, res) => {
   try {
-    const { userId, hubId, enteredPasscode } = req.body;
+    // GÜVENLİK: userId artık token'dan geliyor, başkası adına kabileye katılınamaz.
+    const userId = req.userId;
+    const { hubId, enteredPasscode } = req.body;
     
     const hub = await Hub.findById(hubId);
     const user = await User.findById(userId);
@@ -97,9 +100,11 @@ router.get('/:id/messages', async (req, res) => {
 });
 
 // 6. KABİLE İÇİNE DOSYA VEYA MESAJ GÖNDER 
-router.post('/:id/messages/create', async (req, res) => {
+router.post('/:id/messages/create', verifyToken, async (req, res) => {
   try {
-    const { userId, content, attachment, attachmentName, attachmentType } = req.body;
+    // GÜVENLİK: userId artık token'dan geliyor, başkası adına mesaj gönderilemez.
+    const userId = req.userId;
+    const { content, attachment, attachmentName, attachmentType } = req.body;
     
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
@@ -122,9 +127,11 @@ router.post('/:id/messages/create', async (req, res) => {
 });
 
 // --- 7. YENİ: KOD LABORATUVARI ARŞİVİNE KOD KAYDET (SAVE SNIPPET) ---
-router.post('/:id/code/save', async (req, res) => {
+router.post('/:id/code/save', verifyToken, async (req, res) => {
   try {
-    const { userId, code, title } = req.body;
+    // GÜVENLİK: userId artık token'dan geliyor, başkası adına kod kaydedilemez.
+    const userId = req.userId;
+    const { code, title } = req.body;
     
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });

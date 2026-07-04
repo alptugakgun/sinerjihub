@@ -22,6 +22,7 @@ export default function LoginPage() {
 
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/auth/login", {
+        credentials: "include",
         method: "POST",
         headers: {
           "Content-Type": "application/json",

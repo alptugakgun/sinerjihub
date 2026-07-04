@@ -79,11 +79,11 @@ export default function DashboardPage() {
         socket.current.emit("newUser", userId);
 
         const [userRes, postsRes, notifRes, friendRes, storiesRes] = await Promise.all([
-          fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`),
-          fetch("https://sinerjihub-1.onrender.com/api/posts/all"),
-          fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`),
-          fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`),
-          fetch("https://sinerjihub-1.onrender.com/api/stories/active")
+          fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" }),
+          fetch("https://sinerjihub-1.onrender.com/api/posts/all", { credentials: "include" }),
+          fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`, { credentials: "include" }),
+          fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`, { credentials: "include" }),
+          fetch("https://sinerjihub-1.onrender.com/api/stories/active", { credentials: "include" })
         ]);
         
         if (userRes.ok) setUser(await userRes.json()); else { router.push("/login"); return; }
@@ -109,6 +109,7 @@ export default function DashboardPage() {
 
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/stories/create", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, content: newStory }),
@@ -129,7 +130,7 @@ export default function DashboardPage() {
   // --- 4. YORUM (YANKI) MEKANİZMASI ---
   const fetchComments = async (postId) => {
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comments`);
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comments`, { credentials: "include" });
       const data = await res.json();
       setActiveComments(prev => ({ ...prev, [postId]: data }));
     } catch (err) { 
@@ -153,6 +154,7 @@ export default function DashboardPage() {
 
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/${postId}/comment`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, content: commentInput }),
@@ -194,6 +196,7 @@ export default function DashboardPage() {
     const tagsArray = postTags.split(",").map(tag => tag.trim()).filter(tag => tag !== "");
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/posts/create", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, content: postContent, tags: tagsArray }),
@@ -216,6 +219,7 @@ export default function DashboardPage() {
     const userId = localStorage.getItem("userId");
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/upvote/${postId}`, {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId }),
@@ -240,7 +244,8 @@ export default function DashboardPage() {
   const handleSendFriendRequest = async (targetId) => {
     const userId = localStorage.getItem("userId");
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, { method: "POST" });
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/request/${userId}/${targetId}`, {
+        credentials: "include", method: "POST" });
       const data = await res.json();
       toast.success(data.message, { style: { background: '#030027', color: '#F2F3D9', border: '1px solid #DE7A00' } });
     } catch (err) { 
@@ -251,11 +256,12 @@ export default function DashboardPage() {
   const handleAcceptFriend = async (friendId) => {
     const userId = localStorage.getItem("userId");
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/accept/${userId}/${friendId}`, { method: "POST" });
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/social/accept/${userId}/${friendId}`, {
+        credentials: "include", method: "POST" });
       if (res.ok) {
         toast.success("Artık arkadaşsınız! ✨", { style: { background: '#005700', color: '#F2F3D9' } });
         setFriendRequests(friendRequests.filter(req => req._id !== friendId));
-        const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`).then(r => r.json());
+        const updatedUser = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" }).then(r => r.json());
         setUser(updatedUser);
 
         socket.current.emit("sendNotification", {

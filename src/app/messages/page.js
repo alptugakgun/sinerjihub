@@ -67,7 +67,7 @@ export default function MessagesPage() {
       try {
         socket.current.emit("newUser", userId);
 
-        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" });
         const userData = await userRes.json();
         if (userRes.ok) { 
            setUser(userData); 
@@ -75,7 +75,7 @@ export default function MessagesPage() {
            // Arkadaş listesini (Ağındaki kişileri) detaylarıyla çek
            if (userData.friends && userData.friends.length > 0) {
               const friendsPromises = userData.friends.map(friendId => 
-                 fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${friendId}`).then(res => res.json())
+                 fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${friendId}`, { credentials: "include" }).then(res => res.json())
               );
               const friendsData = await Promise.all(friendsPromises);
               // undefined/hata dönenleri filtrele
@@ -101,7 +101,7 @@ export default function MessagesPage() {
     const userId = localStorage.getItem("userId");
     
     try {
-      const res = await fetch(`https://sinerjihub-1.onrender.com/api/messages/between/${userId}/${friend._id}`);
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/messages/between/${userId}/${friend._id}`, { credentials: "include" });
       if (res.ok) {
         const data = await res.json();
         setMessages(data);
@@ -133,6 +133,7 @@ export default function MessagesPage() {
     // Veritabanına kaydet (Arka planda)
     try {
       await fetch("https://sinerjihub-1.onrender.com/api/messages/send", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ senderId: userId, receiverId: activeChat._id, content: messageContent }),

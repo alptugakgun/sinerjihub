@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken'); // YENİ: Şifreleme motoru
 const User = require('../models/User');
+const { verifyToken, requireSelf } = require('../middleware/verifyToken');
 
 // --- 1. KULLANICI KAYDI (REGISTER) ---
 router.post('/register', async (req, res) => {
@@ -60,21 +61,23 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ message: "Hatalı şifre girdin dostum." });
     }
 
-    // --- YENİ EKLENEN: GÜVENLİK KALKANI (JWT TOKEN ÜRETİMİ) ---
+    // --- GÜVENLİK KALKANI (JWT TOKEN ÜRETİMİ) ---
     // Kullanıcıya, içinde rütbelerini barındıran kırılmaz bir bilet veriyoruz.
-    // Eğer .env içinde JWT_SECRET yoksa, geçici bir güvenlik anahtarı kullanılır.
-    const tokenSecret = process.env.JWT_SECRET || "SinerjiHubKurucuAnahtari123";
+    // NOT: Artık fallback secret yok — server.js zaten JWT_SECRET olmadan başlamıyor.
     const token = jwt.sign(
       { id: user._id, roles: user.roles }, 
-      tokenSecret, 
+      process.env.JWT_SECRET, 
       { expiresIn: "7d" } // Token 7 gün boyunca geçerli olacak
     );
 
     // Token'ı httpOnly çerez olarak ayarlayarak XSS saldırılarını önle
+    // NOT: sameSite 'strict' idi ama frontend (vercel) ve backend (onrender) FARKLI domain'ler
+    // olduğu için 'strict' cookie'nin hiç gönderilmemesine yol açıyordu.
+    // Cross-domain'de çalışması için 'none' + secure:true (HTTPS) şart.
     res.cookie('token', token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
+        secure: true, // 'none' sameSite için secure:true zorunlu, bu yüzden env'e bakılmaksızın true
+        sameSite: 'none',
         maxAge: 7 * 24 * 60 * 60 * 1000 // 7 gün
     });
 
@@ -99,7 +102,8 @@ router.get('/user/:id', async (req, res) => {
 });
 
 // --- 4. PROFİL FOTOĞRAFI GÜNCELLEME ---
-router.put('/update-avatar/:id', async (req, res) => {
+// GÜVENLİK: Artık sadece giriş yapmış ve :id'si kendi id'sine eşit olan kullanıcı buraya erişebilir.
+router.put('/update-avatar/:id', verifyToken, requireSelf('id'), async (req, res) => {
   try {
     const { profilePicture } = req.body; 
     
@@ -141,7 +145,8 @@ router.get('/recommendations/:id', async (req, res) => {
 });
 
 // --- 6. PROFİL BİLGİLERİNİ GÜNCELLEME (BİO VE SOSYAL MEDYA) ---
-router.put('/update-profile/:id', async (req, res) => {
+// GÜVENLİK: Artık sadece giriş yapmış ve :id'si kendi id'sine eşit olan kullanıcı buraya erişebilir.
+router.put('/update-profile/:id', verifyToken, requireSelf('id'), async (req, res) => {
   try {
     const { bio, socialLinks, interests } = req.body;
     

@@ -1,17 +1,45 @@
 @import "tailwindcss";
 
 :root {
-  --background: #030027;
-  --foreground: #F2F3D9;
+  /* @theme yerine standart :root kullanarak VS Code uyarısını susturuyoruz */
+  --color-discord-bg: #1e1f22;
+  --color-discord-card: #2b2d31;
+  --color-discord-hover: #35373c;
+  --color-linkedin-blue: #0a66c2;
+  --color-linkedin-blue-hover: #004182;
+  --color-text-primary: #f2f3f5;
+  --color-text-muted: #949ba4;
+  --color-border-subtle: #3f4147;
+
+  --background: var(--color-discord-bg);
+  --foreground: var(--color-text-primary);
 }
 
+/* Kodun geri kalanı (body, ::selection vb.) aynen kalacak... */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  overflow-y: hidden; /* Prevent full body scroll, handle scroll in content areas */
 }
 
 ::selection {
-  background-color: rgba(222, 122, 0, 0.4); 
-  color: var(--foreground);
+  background-color: var(--color-linkedin-blue);
+  color: #fff;
+}
+
+/* Custom Scrollbar for Discord-like feel */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-discord-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-discord-hover);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-subtle);
 }

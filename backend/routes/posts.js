@@ -4,11 +4,15 @@ const router = express.Router();
 const Post = require('../models/Post');
 const User = require('../models/User');
 const Comment = require('../models/Comment'); // YENİ: Yorum modelini çağırdık
+const { verifyToken } = require('../middleware/verifyToken');
 
 // --- 1. YENİ İLAN (POST) OLUŞTURMA ---
-router.post('/create', async (req, res) => {
+router.post('/create', verifyToken, async (req, res) => {
   try {
-    const { userId, content, tags } = req.body;
+    // GÜVENLİK: userId artık body'den değil, doğrulanmış token'dan geliyor.
+    // Böylece kimse başka birinin adına ilan oluşturamaz.
+    const userId = req.userId;
+    const { content, tags } = req.body;
     
     const user = await User.findById(userId);
     if (!user) {
@@ -42,9 +46,10 @@ router.get('/all', async (req, res) => {
 });
 
 // --- 3. İLANA DESTEK VERME (UPVOTE) ---
-router.post('/upvote/:id', async (req, res) => {
+router.post('/upvote/:id', verifyToken, async (req, res) => {
   try {
-    const { userId } = req.body;
+    // GÜVENLİK: userId artık token'dan geliyor, başkası adına oy kullanılamaz.
+    const userId = req.userId;
     const post = await Post.findById(req.params.id);
     
     if (!post) {
@@ -64,9 +69,11 @@ router.post('/upvote/:id', async (req, res) => {
 });
 
 // --- 4. YENİ: İLANA YORUM (YANKI) EKLEME ---
-router.post('/:id/comment', async (req, res) => {
+router.post('/:id/comment', verifyToken, async (req, res) => {
   try {
-    const { userId, content } = req.body;
+    // GÜVENLİK: userId artık token'dan geliyor, başkası adına yorum yazılamaz.
+    const userId = req.userId;
+    const { content } = req.body;
     
     const user = await User.findById(userId);
     if (!user) {

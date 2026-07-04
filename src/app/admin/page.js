@@ -46,7 +46,7 @@ export default function AdminPage() {
       if (!userId) { router.push("/login"); return; }
 
       try {
-        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`);
+        const userRes = await fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" });
         const userData = await userRes.json();
         
         if (userRes.ok) {
@@ -56,11 +56,11 @@ export default function AdminPage() {
           return;
         }
 
-        const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all");
+        const postsRes = await fetch("https://sinerjihub-1.onrender.com/api/posts/all", { credentials: "include" });
         const postsData = await postsRes.json();
         setTotalPosts(postsData.length);
 
-        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all");
+        const hubsRes = await fetch("https://sinerjihub-1.onrender.com/api/hubs/all", { credentials: "include" });
         const hubsData = await hubsRes.json();
         setHubs(hubsData);
 
@@ -79,6 +79,7 @@ export default function AdminPage() {
     e.preventDefault();
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/admin/verify", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ password: passkey })
@@ -103,6 +104,7 @@ export default function AdminPage() {
   const fetchFeedbacks = async (adminKey) => {
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/feedback/all", {
+        credentials: "include",
         headers: { "x-admin-password": adminKey }
       });
       if (res.ok) {
@@ -118,6 +120,7 @@ export default function AdminPage() {
   const handleUpdateFeedbackStatus = async (id, newStatus) => {
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/feedback/update-status/${id}`, {
+        credentials: "include",
         method: "PUT",
         headers: { 
           "Content-Type": "application/json",
@@ -142,6 +145,7 @@ export default function AdminPage() {
 
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/hubs/create", {
+        credentials: "include",
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(newHub),
@@ -169,6 +173,7 @@ export default function AdminPage() {
     setFoundUser(null);
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/admin/search-user", {
+        credentials: "include",
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -196,6 +201,7 @@ export default function AdminPage() {
     setIsUpdating(true);
     try {
       const res = await fetch(`https://sinerjihub-1.onrender.com/api/admin/update-user/${foundUser._id}`, {
+        credentials: "include",
         method: "PUT",
         headers: {
           "Content-Type": "application/json",

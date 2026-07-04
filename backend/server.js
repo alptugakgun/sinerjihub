@@ -2,6 +2,15 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const cookie = require('cookie'); // Cookie'den token okumak için (zaten dependency'de mevcut)
+
+// --- GÜVENLİK ZORUNLULUĞU: JWT_SECRET olmadan sunucu asla ayağa kalkmasın ---
+// Eskiden auth.js içinde bir fallback secret vardı, bu tehlikeliydi.
+// .env eksikse artık sunucuyu hiç başlatmıyoruz.
+if (!process.env.JWT_SECRET) {
+  console.error('❌ KRİTİK HATA: .env dosyasında JWT_SECRET tanımlı değil. Sunucu başlatılamıyor.');
+  process.exit(1);
+}
 
 // YENİ: Gerçek zamanlı iletişim için gerekli modüller
 const http = require('http'); 
@@ -35,12 +44,24 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 5000;
 
-app.use(cors());
+// GÜVENLİK: origin '*' ile credentials birlikte çalışmaz (tarayıcılar reddeder).
+// Frontend'in gerçek adresini FRONTEND_URL olarak .env'e ekle (örn. https://sinerjihub.vercel.app).
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
 
 // --- DOSYA BOYUT LİMİTİ ARTIRIMI (Kabile Arşivi İçin Hayati Önem Taşır) ---
 // Base64 formatındaki resimlerin ve dosyaların reddedilmemesi için limiti 10MB yapıyoruz
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
+
+// Gelen isteklerdeki cookie header'ını okuyup req.cookies olarak sunuyoruz
+// (verifyToken middleware'i bunu httpOnly 'token' cookie'sini okumak için kullanıyor)
+app.use((req, res, next) => {
+  req.cookies = cookie.parse(req.headers.cookie || '');
+  next();
+});
 
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB Başarıyla Bağlandı!'))

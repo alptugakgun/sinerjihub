@@ -44,6 +44,7 @@ export default function OnboardingPage() {
 
     try {
       const res = await fetch("https://sinerjihub-1.onrender.com/api/auth/update-profile", {
+        credentials: "include",
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, roles: selectedRoles, interests: selectedInterests }),
