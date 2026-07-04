@@ -1,0 +1,21 @@
+{
+  "name": "SinerjiHub | Dijital Kabile Ekosistemi",
+  "short_name": "SinerjiHub",
+  "description": "Gezginler, öğrenciler ve geliştiriciler için uçtan uca etkileşimli sinerji ağı ve kabile platformu.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030027",
+  "theme_color": "#030027",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
