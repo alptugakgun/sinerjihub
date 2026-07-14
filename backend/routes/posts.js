@@ -37,9 +37,19 @@ router.post('/create', verifyToken, async (req, res) => {
 // --- 2. TÜM İLANLARI GETİRME (Dashboard Akışı İçin) ---
 router.get('/all', async (req, res) => {
   try {
+    // Sayfalama parametrelerini al (varsayılan: sayfa 1, limit 10)
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
     // En yeni ilan en üstte gelsin diye -1 ile sıralıyoruz
-    const posts = await Post.find().sort({ createdAt: -1 });
-    res.status(200).json(posts);
+    const posts = await Post.find().sort({ createdAt: -1 }).skip(skip).limit(limit);
+    
+    // Toplam ilan sayısını da gönder (frontend'de daha fazla yükle butonunu yönetmek için)
+    const totalPosts = await Post.countDocuments();
+    const hasMore = totalPosts > skip + posts.length;
+
+    res.status(200).json({ posts, hasMore, totalPosts, currentPage: page });
   } catch (err) {
     res.status(500).json({ message: "İlanlar getirilemedi.", error: err.message });
   }

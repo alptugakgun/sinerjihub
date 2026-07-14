@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { io } from "socket.io-client";
 import { Toaster, toast } from "react-hot-toast";
+import Editor from "@monaco-editor/react";
 
 // --- YARDIMCI BİLEŞEN: DİĞER KULLANICILARIN (REMOTE) VİDEO OYNATICISI ---
 const RemoteVideo = ({ stream, peerId }) => {
@@ -132,8 +133,8 @@ export default function HubRoomPage() {
   const scrollToBottom = () => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); };
 
   // --- CANLI KOD SENKRONİZASYONU VE KAYIT MANTIĞI ---
-  const handleCodeChange = (e) => {
-    const updatedCode = e.target.value;
+  const handleEditorChange = (value) => {
+    const updatedCode = value || "";
     setLiveCode(updatedCode);
     socket.current.emit("sendCodeUpdate", { hubId, code: updatedCode });
   };
@@ -503,14 +504,23 @@ export default function HubRoomPage() {
                 </div>
 
                 {!showArchive ? (
-                   <textarea 
-                      value={liveCode}
-                      onChange={handleCodeChange}
-                      spellCheck="false"
-                      className="flex-1 bg-transparent p-5 text-[#F2F3D9] font-mono text-[13px] leading-loose outline-none resize-none custom-scrollbar"
-                      placeholder="// Kodunuzu buraya yazın..."
-                      style={{ tabSize: 4 }}
-                   />
+                   <div className="flex-1 overflow-hidden relative">
+                     <Editor
+                        height="100%"
+                        defaultLanguage="javascript"
+                        theme="vs-dark"
+                        value={liveCode}
+                        onChange={handleEditorChange}
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 14,
+                          fontFamily: "monospace",
+                          scrollBeyondLastLine: false,
+                          wordWrap: "on",
+                          padding: { top: 16 }
+                        }}
+                     />
+                   </div>
                 ) : (
                    <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar bg-[#02001a]/50">
                       {!hub?.codeSnippets || hub.codeSnippets.length === 0 ? (

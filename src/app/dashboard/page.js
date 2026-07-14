@@ -14,6 +14,9 @@ export default function DashboardPage() {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [posts, setPosts] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   
   // --- BİLDİRİM VE ARKADAŞLIK DURUMLARI ---
   const [notifications, setNotifications] = useState([]);
@@ -80,14 +83,18 @@ export default function DashboardPage() {
 
         const [userRes, postsRes, notifRes, friendRes, storiesRes] = await Promise.all([
           fetch(`https://sinerjihub-1.onrender.com/api/auth/user/${userId}`, { credentials: "include" }),
-          fetch("https://sinerjihub-1.onrender.com/api/posts/all", { credentials: "include" }),
+          fetch(`https://sinerjihub-1.onrender.com/api/posts/all?page=1&limit=10`, { credentials: "include" }),
           fetch(`https://sinerjihub-1.onrender.com/api/notifications/user/${userId}`, { credentials: "include" }),
           fetch(`https://sinerjihub-1.onrender.com/api/social/requests/${userId}`, { credentials: "include" }),
           fetch("https://sinerjihub-1.onrender.com/api/stories/active", { credentials: "include" })
         ]);
         
         if (userRes.ok) setUser(await userRes.json()); else { router.push("/login"); return; }
-        if (postsRes.ok) setPosts(await postsRes.json());
+        if (postsRes.ok) {
+           const data = await postsRes.json();
+           setPosts(data.posts || []);
+           setHasMore(data.hasMore || false);
+        }
         if (notifRes.ok) setNotifications(await notifRes.json());
         if (friendRes.ok) setFriendRequests(await friendRes.json());
         if (storiesRes.ok) setStories(await storiesRes.json());
@@ -100,6 +107,25 @@ export default function DashboardPage() {
     };
     fetchData();
   }, [router]);
+
+  const loadMorePosts = async () => {
+    if (isLoadingMore || !hasMore) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const res = await fetch(`https://sinerjihub-1.onrender.com/api/posts/all?page=${nextPage}&limit=10`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(prev => [...prev, ...(data.posts || [])]);
+        setHasMore(data.hasMore);
+        setPage(nextPage);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   // --- 3. SİNYAL (HİKAYE) FIRLATMA FONKSİYONU ---
   const handleAddStory = async (e) => {
@@ -582,6 +608,11 @@ export default function DashboardPage() {
                   </div>
                 ))
               )}
+              {hasMore && (
+                 <button onClick={loadMorePosts} disabled={isLoadingMore} className="w-full bg-[#030027] border border-[#DE7A00]/30 text-[#DE7A00] font-bold text-xs py-4 rounded-2xl hover:bg-[#DE7A00]/10 transition-colors mt-6">
+                    {isLoadingMore ? "YÜKLENİYOR..." : "DAHA FAZLA İLAN GÖSTER"}
+                 </button>
+              )}
             </div>
           </div>
 
@@ -626,6 +657,31 @@ export default function DashboardPage() {
           </div>
         </div>
       </main>
+
+      {/* --- MOBİL BOTTOM NAVIGATION --- */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#02001a]/95 backdrop-blur-md border-t border-[#F2F3D9]/10 z-[100] px-6 py-4 flex justify-between items-center">
+        <Link href="/dashboard" className="flex flex-col items-center gap-1 text-[#DE7A00]">
+          <span className="text-xl">🏠</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest">Ana Üs</span>
+        </Link>
+        <Link href="/explore" className="flex flex-col items-center gap-1 text-[#F2F3D9]/50 hover:text-[#DE7A00] transition-colors">
+          <span className="text-xl">🧭</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest">Keşfet</span>
+        </Link>
+        <Link href="/messages" className="flex flex-col items-center gap-1 text-[#F2F3D9]/50 hover:text-[#DE7A00] transition-colors">
+          <span className="text-xl">💬</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest">Sinyal</span>
+        </Link>
+        <button onClick={() => setIsNotifOpen(true)} className="flex flex-col items-center gap-1 text-[#F2F3D9]/50 hover:text-[#DE7A00] transition-colors relative">
+          <span className="text-xl">🔔</span>
+          {totalNotifs > 0 && <span className="absolute top-0 right-1 bg-[#DE7A00] w-2 h-2 rounded-full"></span>}
+          <span className="text-[9px] font-bold uppercase tracking-widest">Akış</span>
+        </button>
+        <Link href="/profile" className="flex flex-col items-center gap-1 text-[#F2F3D9]/50 hover:text-[#DE7A00] transition-colors">
+          <span className="text-xl">👤</span>
+          <span className="text-[9px] font-bold uppercase tracking-widest">Profil</span>
+        </Link>
+      </nav>
       
       <style jsx global>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
