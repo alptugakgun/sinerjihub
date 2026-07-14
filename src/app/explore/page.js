@@ -202,7 +202,14 @@ export default function ExplorePage() {
         {/* --- ARAMA ÇUBUĞU --- */}
         <div className="relative max-w-4xl mb-12">
           <span className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-500 text-xl">🔍</span>
-          <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="Kabile veya konu ara..." className="w-full bg-gray-800/40 border border-gray-700/50 rounded-full pl-14 pr-6 py-5 text-sm text-white outline-none focus:border-indigo-500/50 focus:bg-gray-800/80 transition-all shadow-inner backdrop-blur-sm" />
+          <input 
+            type="text" 
+            value={searchQuery} 
+            onChange={(e) => setSearchQuery(e.target.value)} 
+            placeholder={activeTab === 'users' ? "Kullanıcı adı ara..." : "Kabile veya konu ara..."} 
+            className="w-full bg-gray-800/40 border border-gray-700/50 rounded-full pl-14 pr-6 py-5 text-sm text-white outline-none focus:border-indigo-500/50 focus:bg-gray-800/80 transition-all shadow-inner backdrop-blur-sm" 
+            disabled={activeTab === 'radar'}
+          />
         </div>
 
         {/* --- TAB KONTROLLERİ --- */}
@@ -285,7 +292,10 @@ export default function ExplorePage() {
         {activeTab === 'users' && (
           <div className="bg-gray-900/40 border border-gray-800 p-8 rounded-[2.5rem]">
             {searchQuery.length === 0 ? (
-              <p className="text-gray-500 text-sm font-medium italic text-center py-10">Kimi arıyorsun? Kullanıcı adı girmeye başla...</p>
+              <div className="text-center py-10">
+                <span className="text-4xl block mb-4">👆</span>
+                <p className="text-gray-500 text-sm font-medium italic">Kimi arıyorsun? Sayfanın en üstündeki arama çubuğuna kullanıcı adını yaz...</p>
+              </div>
             ) : usersList.length === 0 ? (
               <p className="text-gray-500 text-sm font-medium italic text-center py-10">"{searchQuery}" adında bir gezgin bulunamadı.</p>
             ) : (
