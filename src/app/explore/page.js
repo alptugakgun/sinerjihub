@@ -13,7 +13,8 @@ export default function ExplorePage() {
   const [hubs, setHubs] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("hubs"); // 'hubs' veya 'radar'
+  const [activeTab, setActiveTab] = useState("hubs"); // 'hubs', 'radar', veya 'users'
+  const [usersList, setUsersList] = useState([]);
 
   // --- KABİLE KURMA MODALI ---
   const [isHubModalOpen, setIsHubModalOpen] = useState(false);
@@ -45,6 +46,23 @@ export default function ExplorePage() {
     };
     fetchData();
   }, [router]);
+
+  useEffect(() => {
+    if (activeTab === 'users' && searchQuery.length > 0) {
+      const fetchUsers = async () => {
+        try {
+          const res = await fetch(`https://sinerjihub-1.onrender.com/api/auth/search?q=${searchQuery}`);
+          if (res.ok) {
+            setUsersList(await res.json());
+          }
+        } catch (err) { console.error(err); }
+      };
+      const timeoutId = setTimeout(() => fetchUsers(), 300);
+      return () => clearTimeout(timeoutId);
+    } else {
+      setUsersList([]);
+    }
+  }, [searchQuery, activeTab]);
 
   const handleCreateHub = async (e) => {
     e.preventDefault();
@@ -188,9 +206,10 @@ export default function ExplorePage() {
         </div>
 
         {/* --- TAB KONTROLLERİ --- */}
-        <div className="flex gap-4 mb-8 border-b border-gray-800 pb-4">
+        <div className="flex flex-wrap gap-4 mb-8 border-b border-gray-800 pb-4">
           <button onClick={() => setActiveTab('hubs')} className={`text-sm font-black uppercase tracking-widest transition-all ${activeTab === 'hubs' ? 'text-indigo-400 border-b-2 border-indigo-400 pb-2' : 'text-gray-500 hover:text-gray-300'}`}>Kabileler</button>
           <button onClick={() => setActiveTab('radar')} className={`text-sm font-black uppercase tracking-widest transition-all ${activeTab === 'radar' ? 'text-purple-400 border-b-2 border-purple-400 pb-2' : 'text-gray-500 hover:text-gray-300'}`}>Sinerji Radarı</button>
+          <button onClick={() => setActiveTab('users')} className={`text-sm font-black uppercase tracking-widest transition-all ${activeTab === 'users' ? 'text-green-400 border-b-2 border-green-400 pb-2' : 'text-gray-500 hover:text-gray-300'}`}>Gezginler (Arama)</button>
         </div>
 
         {/* --- KABİLELER LİSTESİ --- */}
@@ -259,6 +278,41 @@ export default function ExplorePage() {
                 ))
               )}
             </div>
+          </div>
+        )}
+
+        {/* --- KULLANICI ARAMA SONUÇLARI --- */}
+        {activeTab === 'users' && (
+          <div className="bg-gray-900/40 border border-gray-800 p-8 rounded-[2.5rem]">
+            {searchQuery.length === 0 ? (
+              <p className="text-gray-500 text-sm font-medium italic text-center py-10">Kimi arıyorsun? Kullanıcı adı girmeye başla...</p>
+            ) : usersList.length === 0 ? (
+              <p className="text-gray-500 text-sm font-medium italic text-center py-10">"{searchQuery}" adında bir gezgin bulunamadı.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {usersList.map(u => (
+                  <div key={u._id} className="flex items-center justify-between bg-gray-900/60 p-5 rounded-2xl border border-gray-700 hover:border-green-500/50 transition-all group">
+                     <div className="flex items-center gap-4">
+                          <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-green-600 to-teal-600 p-[2px]">
+                            <div className="w-full h-full rounded-full bg-gray-900 flex items-center justify-center text-xl font-black overflow-hidden">
+                                {u.profilePicture ? <img src={u.profilePicture} className="w-full h-full object-cover"/> : u.username[0].toUpperCase()}
+                            </div>
+                          </div>
+                          <div>
+                              <p className="text-sm font-black text-white">{u.username}</p>
+                              <p className="text-[10px] text-green-400 font-black tracking-widest uppercase mb-1">{u.karmaPoints} KARMA</p>
+                              <div className="flex flex-wrap gap-1">
+                                {u.roles?.map((role, i) => <span key={i} className="text-[8px] bg-green-900/30 text-green-400 px-1.5 py-0.5 rounded border border-green-500/20">{role}</span>)}
+                              </div>
+                          </div>
+                     </div>
+                     {user?._id !== u._id && !user?.friends?.includes(u._id) && (
+                       <button onClick={() => handleSendFriendRequest(u._id)} className="bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600 hover:text-white px-4 py-2.5 rounded-xl text-[10px] font-black tracking-widest transition-all">BAĞ KUR</button>
+                     )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

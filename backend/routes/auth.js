@@ -162,4 +162,21 @@ router.put('/update-profile/:id', verifyToken, requireSelf('id'), async (req, re
   }
 });
 
+// --- 7. KULLANICI ARAMA (USER SEARCH) ---
+router.get('/search', async (req, res) => {
+  try {
+    const query = req.query.q;
+    if (!query) return res.status(200).json([]);
+    
+    // Sadece kullanıcı adı içinde geçenleri bul (büyük-küçük harf duyarsız)
+    const users = await User.find({ username: { $regex: query, $options: "i" } })
+      .select('username profilePicture karmaPoints interests roles')
+      .limit(20);
+      
+    res.status(200).json(users);
+  } catch (err) {
+    res.status(500).json({ message: "Kullanıcı arama sırasında hata oluştu.", error: err.message });
+  }
+});
+
 module.exports = router;
