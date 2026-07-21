@@ -45,9 +45,23 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 5000;
 
 // GÜVENLİK: origin '*' ile credentials birlikte çalışmaz (tarayıcılar reddeder).
-// Frontend'in gerçek adresini FRONTEND_URL olarak .env'e ekle (örn. https://sinerjihub.vercel.app).
+// Frontend'in birden fazla adresi olabileceği için izin verilen origin'leri bir dizi (array) olarak tanımlıyoruz.
+const allowedOrigins = [
+  process.env.FRONTEND_URL || 'http://localhost:3000',
+  'https://sinerjihub.vercel.app',
+  'https://sinerjicommunity.site'
+];
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  origin: function (origin, callback) {
+    // Postman gibi araçlardan gelen (origin undefined) isteklere veya izinli listedeki domainlere izin ver.
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.error(`CORS Engellendi: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 
