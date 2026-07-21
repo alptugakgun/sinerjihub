@@ -53,9 +53,19 @@ router.post('/create', verifyToken, async (req, res) => {
 // 2. TÜM KABİLELERİ GETİR 
 router.get('/all', async (req, res) => {
   try {
-    // GÜVENLİK: passcode (hash olsa bile) hiçbir zaman client'a gönderilmemeli.
     const hubs = await Hub.find().select('-passcode').populate('members', 'username profilePicture karmaPoints');
-    res.status(200).json(hubs);
+    
+    // GÜVENLİK: Özel kabilelerin üyelerini gizle
+    const secureHubs = hubs.map(hub => {
+      const hubObj = hub.toObject();
+      if (hubObj.isPrivate) {
+        hubObj.memberCount = hubObj.members.length;
+        hubObj.members = []; // Üyeleri gizle
+      }
+      return hubObj;
+    });
+
+    res.status(200).json(secureHubs);
   } catch (err) {
     res.status(500).json({ message: "Kabileler getirilemedi.", error: err.message });
   }
@@ -64,10 +74,17 @@ router.get('/all', async (req, res) => {
 // 3. TEK BİR KABİLE DETAYI 
 router.get('/:id', async (req, res) => {
   try {
-    // GÜVENLİK: passcode (hash olsa bile) hiçbir zaman client'a gönderilmemeli.
     const hub = await Hub.findById(req.params.id).select('-passcode').populate('members', 'username profilePicture karmaPoints');
     if (!hub) return res.status(404).json({ message: "Bu kabile bulunamadı veya silinmiş." });
-    res.status(200).json(hub);
+    
+    // GÜVENLİK: Özel kabilelerin üyelerini gizle
+    const hubObj = hub.toObject();
+    if (hubObj.isPrivate) {
+      hubObj.memberCount = hubObj.members.length;
+      hubObj.members = []; // Üyeleri gizle
+    }
+
+    res.status(200).json(hubObj);
   } catch (err) {
     res.status(500).json({ message: "Kabile detayı alınamadı.", error: err.message });
   }
@@ -110,9 +127,17 @@ router.post('/join', verifyToken, async (req, res) => {
   }
 });
 
-// 5. KABİLE İÇİ MESAJLARI GETİR 
-router.get('/:id/messages', async (req, res) => {
+router.get('/:id/messages', verifyToken, async (req, res) => {
   try {
+    const hub = await Hub.findById(req.params.id);
+    if (!hub) return res.status(404).json({ message: "Kabile bulunamadı." });
+
+    // GÜVENLİK (IDOR): Özel kabile mesajlarını sadece üyeler görebilir
+    // Herkesin gördüğü Public kabilelere de üye kontrolü yapabiliriz ama sadece isPrivate olana yapıyoruz şimdilik
+    if (hub.isPrivate && !hub.members.includes(req.userId)) {
+      return res.status(403).json({ message: "Bu kabilenin mesajlarını görmek için üye olmalısın." });
+    }
+
     const messages = await Message.find({ hubId: req.params.id }).sort({ createdAt: 1 });
     res.status(200).json(messages);
   } catch (err) {
@@ -123,12 +148,19 @@ router.get('/:id/messages', async (req, res) => {
 // 6. KABİLE İÇİNE DOSYA VEYA MESAJ GÖNDER 
 router.post('/:id/messages/create', verifyToken, async (req, res) => {
   try {
-    // GÜVENLİK: userId artık token'dan geliyor, başkası adına mesaj gönderilemez.
     const userId = req.userId;
     const { content, attachment, attachmentName, attachmentType } = req.body;
     
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "Kullanıcı bulunamadı." });
+
+    const hub = await Hub.findById(req.params.id);
+    if (!hub) return res.status(404).json({ message: "Kabile bulunamadı." });
+
+    // GÜVENLİK (Yetkilendirme): Sadece üyeler mesaj gönderebilir
+    if (!hub.members.includes(userId)) {
+      return res.status(403).json({ message: "Bu kabileye mesaj göndermek için üye olmalısın." });
+    }
 
     const newMessage = new Message({
       hubId: req.params.id,
@@ -150,7 +182,6 @@ router.post('/:id/messages/create', verifyToken, async (req, res) => {
 // --- 7. YENİ: KOD LABORATUVARI ARŞİVİNE KOD KAYDET (SAVE SNIPPET) ---
 router.post('/:id/code/save', verifyToken, async (req, res) => {
   try {
-    // GÜVENLİK: userId artık token'dan geliyor, başkası adına kod kaydedilemez.
     const userId = req.userId;
     const { code, title } = req.body;
     
@@ -159,6 +190,11 @@ router.post('/:id/code/save', verifyToken, async (req, res) => {
 
     const hub = await Hub.findById(req.params.id);
     if (!hub) return res.status(404).json({ message: "Kabile bulunamadı." });
+
+    // GÜVENLİK (Yetkilendirme): Sadece üyeler arşive kod ekleyebilir
+    if (!hub.members.includes(userId)) {
+      return res.status(403).json({ message: "Kabile arşivine kod kaydetmek için üye olmalısın." });
+    }
 
     const newSnippet = {
       authorId: user._id,

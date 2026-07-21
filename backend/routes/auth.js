@@ -150,6 +150,15 @@ router.put('/update-profile/:id', verifyToken, requireSelf('id'), async (req, re
   try {
     const { bio, socialLinks, interests } = req.body;
     
+    // GÜVENLİK (XSS Koruması): socialLinks içindeki URL'leri doğrula
+    if (socialLinks) {
+      for (const [key, url] of Object.entries(socialLinks)) {
+        if (url && typeof url === 'string' && !url.startsWith('http://') && !url.startsWith('https://')) {
+          return res.status(400).json({ message: "Geçersiz URL formatı. Sadece http:// veya https:// ile başlayan linkler kabul edilir." });
+        }
+      }
+    }
+
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
       { $set: { bio, socialLinks, interests } },
@@ -166,10 +175,13 @@ router.put('/update-profile/:id', verifyToken, requireSelf('id'), async (req, re
 router.get('/search', async (req, res) => {
   try {
     const query = req.query.q;
-    if (!query) return res.status(200).json([]);
+    if (!query || typeof query !== 'string') return res.status(200).json([]);
     
+    // GÜVENLİK (ReDoS Koruması): Özel regex karakterlerini kaçış (escape) işleminden geçir
+    const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     // Sadece kullanıcı adı içinde geçenleri bul (büyük-küçük harf duyarsız)
-    const users = await User.find({ username: { $regex: query, $options: "i" } })
+    const users = await User.find({ username: { $regex: escapedQuery, $options: "i" } })
       .select('username profilePicture karmaPoints interests roles')
       .limit(20);
       
